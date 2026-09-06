@@ -51,10 +51,35 @@ public class KorServiceClient {
     public KorServiceResponse areaBasedList(String areaCode, String sigunguCode,
                                             String contentTypeId, int pageNo, int numOfRows) {
 
-        Map<String, String> params = new LinkedHashMap<>();
-        params.put("MobileOS", "ETC");
-        params.put("MobileApp", properties.mobileApp());
-        params.put("_type", "json");
+        return parse("areaBasedList2",
+                fetchJson("areaBasedList2",
+                        areaBasedListParams(areaCode, sigunguCode, contentTypeId, pageNo, numOfRows)));
+    }
+
+    /** 지역 코드 목록을 조회한다. areaCode 가 null 이면 시·도 목록, 있으면 그 안의 시·군 목록. */
+    public KorServiceResponse areaCode(String areaCode, int numOfRows) {
+        return parse("areaCode2", fetchJson("areaCode2", areaCodeParams(areaCode, numOfRows)));
+    }
+
+    /** 캐시 계층이 원본 응답을 그대로 보관할 수 있도록 JSON 문자열을 반환한다. */
+    public String areaBasedListJson(String areaCode, String sigunguCode,
+                                    String contentTypeId, int pageNo, int numOfRows) {
+
+        return fetchJson("areaBasedList2",
+                areaBasedListParams(areaCode, sigunguCode, contentTypeId, pageNo, numOfRows));
+    }
+
+    /** 캐시 키. 같은 조건이면 항상 같은 문자열이 나오도록 파라미터 순서를 고정한다. */
+    public String areaBasedListKey(String areaCode, String sigunguCode,
+                                   String contentTypeId, int pageNo, int numOfRows) {
+
+        return requestKey("areaBasedList2",
+                areaBasedListParams(areaCode, sigunguCode, contentTypeId, pageNo, numOfRows));
+    }
+
+    private Map<String, String> areaBasedListParams(String areaCode, String sigunguCode,
+                                                    String contentTypeId, int pageNo, int numOfRows) {
+        Map<String, String> params = commonParams();
         params.put("numOfRows", String.valueOf(numOfRows));
         params.put("pageNo", String.valueOf(pageNo));
         params.put("areaCode", areaCode);
@@ -66,15 +91,11 @@ public class KorServiceClient {
             params.put("contentTypeId", contentTypeId);
         }
 
-        return call("areaBasedList2", params);
+        return params;
     }
 
-    /** 지역 코드 목록을 조회한다. areaCode 가 null 이면 시·도 목록, 있으면 그 안의 시·군 목록. */
-    public KorServiceResponse areaCode(String areaCode, int numOfRows) {
-        Map<String, String> params = new LinkedHashMap<>();
-        params.put("MobileOS", "ETC");
-        params.put("MobileApp", properties.mobileApp());
-        params.put("_type", "json");
+    private Map<String, String> areaCodeParams(String areaCode, int numOfRows) {
+        Map<String, String> params = commonParams();
         params.put("numOfRows", String.valueOf(numOfRows));
         params.put("pageNo", "1");
 
@@ -82,10 +103,25 @@ public class KorServiceClient {
             params.put("areaCode", areaCode);
         }
 
-        return call("areaCode2", params);
+        return params;
     }
 
-    private KorServiceResponse call(String operation, Map<String, String> params) {
+    private Map<String, String> commonParams() {
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("MobileOS", "ETC");
+        params.put("MobileApp", properties.mobileApp());
+        params.put("_type", "json");
+        return params;
+    }
+
+    private static String requestKey(String operation, Map<String, String> params) {
+        return operation + "?" + params.entrySet().stream()
+                .filter(entry -> !"MobileApp".equals(entry.getKey()))
+                .map(entry -> entry.getKey() + "=" + entry.getValue())
+                .collect(Collectors.joining("&"));
+    }
+
+    private String fetchJson(String operation, Map<String, String> params) {
         if (!properties.hasServiceKey()) {
             throw new ExternalApiException(ApiProvider.KOR_SERVICE2, "KorService2 인증키가 설정되지 않았습니다.");
         }
@@ -100,19 +136,19 @@ public class KorServiceClient {
                     "KorService2 호출에 실패했습니다: " + operation, e);
         }
 
-        return parse(operation, body);
+        if (body == null || body.isBlank()) {
+            throw new ExternalApiException(ApiProvider.KOR_SERVICE2,
+                    "KorService2 응답이 비어 있습니다: " + operation);
+        }
+
+        return body;
     }
 
     /**
      * 인증 실패 등 공급자 오류는 JSON 이 아닌 XML 로 내려오기도 한다.
      * 그 경우도 외부 호출 실패로 변환해 캐시·폴백 계층이 처리하게 한다.
      */
-    private KorServiceResponse parse(String operation, String body) {
-        if (body == null || body.isBlank()) {
-            throw new ExternalApiException(ApiProvider.KOR_SERVICE2,
-                    "KorService2 응답이 비어 있습니다: " + operation);
-        }
-
+    public KorServiceResponse parse(String operation, String body) {
         KorServiceResponse response;
         try {
             response = objectMapper.readValue(body, KorServiceResponse.class);
