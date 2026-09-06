@@ -29,5 +29,8 @@ public enum ApiProvider {
     ITS_TRAFFIC,
 
     /** 한국교통안전공단 주차정보. */
-    TS_PARKING
+    TS_PARKING,
+
+    /** 네이버 블로그 검색. 온라인 언급량 정렬의 주 지표. */
+    NAVER_BLOG_SEARCH
 }
