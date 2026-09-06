@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
  * <p>결측은 null 로 내려간다. 프론트는 null 을 `정보 없음`으로 표시하고 0 으로 해석하지 않는다.
  *
  * @param regionName 지역코드 매핑에서 찾은 시·군 이름. 매핑이 없으면 null.
- * @param centerRank 시·군 내부 중심관광지 순위. LocgoHubTarService1 연동 전까지 null.
+ * @param centerRank 시·군 내부 중심관광지 순위. 매칭되지 않으면 null이며, 순위 없음이 낮은 순위를 뜻하지 않는다.
  * @param baseAt     이 항목의 공급자 기준 시점.
  */
 @Schema(description = "관광지 목록 항목. 결측은 모두 null 이며 0 으로 해석하면 안 됩니다.")
@@ -44,7 +44,7 @@ public record AttractionResponse(
         @Schema(description = "시·군 이름. 지역코드 매핑이 없으면 null", example = "속초시")
         String regionName,
 
-        @Schema(description = "시·군 내부 중심관광지 순위. LocgoHubTarService1 연동 전까지 null")
+        @Schema(description = "시·군 내부 중심관광지 순위. 시·군을 지정하지 않았거나 매칭되지 않으면 null. 시·군 사이의 절대 순위가 아니다.")
         Integer centerRank,
 
         @Schema(description = "이 항목의 공급자 기준 시점. 서버 저장 시각이 아닙니다.")
@@ -52,6 +52,10 @@ public record AttractionResponse(
 ) {
 
     public static AttractionResponse of(AttractionSnapshot snapshot, String regionName) {
+        return of(snapshot, regionName, null);
+    }
+
+    public static AttractionResponse of(AttractionSnapshot snapshot, String regionName, Integer centerRank) {
         return new AttractionResponse(
                 snapshot.contentId(),
                 snapshot.name(),
@@ -62,7 +66,7 @@ public record AttractionResponse(
                 snapshot.contentTypeId(),
                 snapshot.lawdCode(),
                 regionName,
-                null,
+                centerRank,
                 snapshot.baseAt()
         );
     }
