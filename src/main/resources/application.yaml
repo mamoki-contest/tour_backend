@@ -57,6 +57,12 @@ tour:
       read-timeout: 15s
       # 키당 50 RPS 한도. 배치가 이 간격을 지켜 호출한다.
       call-delay: 50ms
+      query:
+        # 동명 장소를 가르기 위해 시·군명을 넣는다.
+        include-sigungu: true
+        # 검색어 뒤에 붙일 말. 비우면 붙이지 않는다.
+        # PRD 는 '여행'을 명시하지만, 장소 성격에 따라 결과가 크게 줄어 재검토 중이다.
+        suffix: ${NAVER_QUERY_SUFFIX:여행}
   cors:
     # Vercel 배포 출처만 허용한다. 쉼표로 구분해 환경변수로 주입한다.
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
