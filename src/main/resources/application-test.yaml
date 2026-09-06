@@ -1,0 +1,12 @@
+spring:
+  config:
+    activate:
+      on-profile: test
+  datasource:
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${TEST_DB_NAME}?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+  jpa:
+    hibernate:
+      # 테스트 시작 시 스키마를 만들고 종료 시 삭제한다.
+      # 반드시 tour_test 스키마만 가리켜야 한다.
+      ddl-auto: create-drop
+    show-sql: true
