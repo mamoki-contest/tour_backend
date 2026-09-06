@@ -42,6 +42,13 @@ cp .env.example .env
 ./gradlew test
 ```
 
+## API 문서
+
+앱을 띄운 뒤 아래에서 확인합니다.
+
+- Swagger UI: <http://localhost:8080/swagger-ui.html>
+- OpenAPI 스펙: <http://localhost:8080/v3/api-docs>
+
 ## 프로파일
 
 | 프로파일 | 대상 스키마 | `ddl-auto` | 비고 |
@@ -60,3 +67,25 @@ cp .env.example .env
 - 결측 값은 `0` 이나 빈 문자열로 채우지 않고 `null` 과 `DataStatus.NO_DATA` 로 구분합니다.
 - 모든 응답은 `RsData` 봉투를 사용하며, 예외는 `GlobalExceptionHandler` 가 변환합니다.
 - API 키와 DB 접속 정보는 저장소에 커밋하지 않습니다.
+- 외부 공급자 장애는 오류가 아니라 정상 응답의 한 상태입니다.
+  `ExternalApiCacheService` 가 흡수해 `STALE`(최종 정상 데이터) 또는 `NO_DATA` 로 변환하며,
+  `ExternalApiException` 이 컨트롤러까지 전파되지 않습니다.
+
+## 외부 API
+
+| 공급자 | 용도 | 환경변수 |
+| --- | --- | --- |
+| KorService2 | 관광지 기본정보·검색 | `KOR_SERVICE_KEY` |
+| 한국관광콘텐츠랩 | 예측·연관·중심관광지 순위 | `VISIT_KOREA_KEY` (미신청) |
+
+공공데이터포털 인증키는 **Encoding 키**를 그대로 넣습니다. 이미 URL 인코딩된 문자열이라
+한 번 더 인코딩하면 인증에 실패하므로, `KorServiceClient` 가 이 값만 인코딩하지 않고 붙입니다.
+
+일부 네트워크에서 `apis.data.go.kr` 의 HTTPS 핸드셰이크가 실패합니다.
+그런 환경에서는 `KOR_SERVICE_BASE_URL` 로 http 를 지정합니다.
+
+실제 외부 API 를 호출하는 스모크 테스트는 기본적으로 실행되지 않습니다.
+
+```bash
+RUN_EXTERNAL_API_TEST=true ./gradlew test
+```

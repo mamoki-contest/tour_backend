@@ -40,10 +40,21 @@ class RegionCodeSeedTest {
     }
 
     @Test
-    @DisplayName("확인되지 않은 시·군구 코드는 임의 값 없이 비어 있다")
-    void sigunguCodeStaysUnknown() {
+    @DisplayName("관광공사 시·군구 코드가 18개 시·군에 모두 매핑된다")
+    void mapsSigunguCode() {
         List<RegionCode> regions = regionCodeRepository.findAllByAreaCode("32");
 
-        assertThat(regions).allSatisfy(region -> assertThat(region.getSigunguCode()).isNull());
+        assertThat(regions).allSatisfy(region -> assertThat(region.getSigunguCode()).isNotBlank());
+        assertThat(regions).extracting(RegionCode::getSigunguCode).doesNotHaveDuplicates();
+    }
+
+    @Test
+    @DisplayName("관광공사 영역 코드와 시·군구 코드로 시·군을 찾는다")
+    void findsByAreaAndSigunguCode() {
+        assertThat(regionCodeRepository.findByAreaCodeAndSigunguCode("32", "1"))
+                .isPresent()
+                .get()
+                .extracting(RegionCode::getLawdCode)
+                .isEqualTo("51150");
     }
 }

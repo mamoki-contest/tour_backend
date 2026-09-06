@@ -1,0 +1,98 @@
+{
+  "response": {
+    "header": {
+      "resultCode": "0000",
+      "resultMsg": "OK"
+    },
+    "body": {
+      "items": {
+        "item": [
+          {
+            "addr1": "강원특별자치도 강릉시 공항길30번길 16",
+            "addr2": "",
+            "areacode": "32",
+            "cat1": "A05",
+            "cat2": "A0502",
+            "cat3": "A05020100",
+            "contentid": "2868839",
+            "contenttypeid": "39",
+            "createdtime": "20221018094613",
+            "firstimage": "http://tong.visitkorea.or.kr/cms/resource/29/2868829_image2_1.jpeg",
+            "firstimage2": "http://tong.visitkorea.or.kr/cms/resource/29/2868829_image3_1.jpeg",
+            "cpyrhtDivCd": "Type3",
+            "mapx": "128.9393320379",
+            "mapy": "37.7611934162",
+            "mlevel": "6",
+            "modifiedtime": "20250904141526",
+            "sigungucode": "1",
+            "tel": "",
+            "title": "가람집옹심이",
+            "zipcode": "25617",
+            "lDongRegnCd": "51",
+            "lDongSignguCd": "150",
+            "lclsSystm1": "FD",
+            "lclsSystm2": "FD01",
+            "lclsSystm3": "FD010100"
+          },
+          {
+            "addr1": "강원특별자치도 강릉시 사천면 중앙서로 62",
+            "addr2": "",
+            "areacode": "32",
+            "cat1": "A02",
+            "cat2": "A0206",
+            "cat3": "A02060300",
+            "contentid": "3539725",
+            "contenttypeid": "14",
+            "createdtime": "20250917144757",
+            "firstimage": "",
+            "firstimage2": "",
+            "cpyrhtDivCd": "",
+            "mapx": "128.8433165066",
+            "mapy": "37.8245592109",
+            "mlevel": "6",
+            "modifiedtime": "20250917144811",
+            "sigungucode": "1",
+            "tel": "",
+            "title": "갈골한과체험전시관",
+            "zipcode": "25434",
+            "lDongRegnCd": "51",
+            "lDongSignguCd": "150",
+            "lclsSystm1": "VE",
+            "lclsSystm2": "VE07",
+            "lclsSystm3": "VE070300"
+          },
+          {
+            "addr1": "강원특별자치도 강릉시 공항길29번길 7 (병산동)",
+            "addr2": "2층",
+            "areacode": "32",
+            "cat1": "A05",
+            "cat2": "A0502",
+            "cat3": "A05020100",
+            "contentid": "3535171",
+            "contenttypeid": "39",
+            "createdtime": "20250911092754",
+            "firstimage": "",
+            "firstimage2": "",
+            "cpyrhtDivCd": "",
+            "mapx": "128.9394291976",
+            "mapy": "37.7629321065",
+            "mlevel": "6",
+            "modifiedtime": "20250911094152",
+            "sigungucode": "1",
+            "tel": "",
+            "title": "감자적1번지",
+            "zipcode": "25617",
+            "lDongRegnCd": "51",
+            "lDongSignguCd": "150",
+            "lclsSystm1": "FD",
+            "lclsSystm2": "FD01",
+            "lclsSystm3": "FD010100"
+          }
+        ]
+      },
+      "numOfRows": 3,
+      "pageNo": 1,
+      "totalCount": 676
+    }
+  }
+}

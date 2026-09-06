@@ -21,3 +21,25 @@ spring:
     properties:
       hibernate:
         format_sql: true
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
+
+tour:
+  api:
+    kor-service:
+      # 공공데이터포털 API 게이트웨이. 로컬에서 HTTPS 가 막히면 .env 로 http 를 지정한다.
+      base-url: ${KOR_SERVICE_BASE_URL:https://apis.data.go.kr/B551011/KorService2}
+      # 공공데이터포털 Encoding 키. 추가 인코딩 없이 그대로 사용한다.
+      service-key: ${KOR_SERVICE_KEY:}
+      mobile-app: tour
+      connect-timeout: 5s
+      read-timeout: 30s
+  cors:
+    # Vercel 배포 출처만 허용한다. 쉼표로 구분해 환경변수로 주입한다.
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
