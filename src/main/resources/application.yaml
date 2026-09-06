@@ -32,3 +32,6 @@ tour:
       mobile-app: tour
       connect-timeout: 5s
       read-timeout: 30s
+  cors:
+    # Vercel 배포 출처만 허용한다. 쉼표로 구분해 환경변수로 주입한다.
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}

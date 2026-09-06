@@ -1,5 +1,6 @@
 package com.mamoki.tour.global.rsdata;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
@@ -28,10 +29,13 @@ public record RsData<T>(
         return new RsData<>(resultCode, msg, null);
     }
 
+    /** 판별용 편의 메서드. 응답 계약에는 포함하지 않는다. */
+    @JsonIgnore
     public boolean isSuccess() {
         return statusCode < 400;
     }
 
+    @JsonIgnore
     public boolean isFail() {
         return !isSuccess();
     }
