@@ -1,0 +1,87 @@
+{
+  "response": {
+    "header": {
+      "resultCode": "0000",
+      "resultMsg": "OK"
+    },
+    "body": {
+      "items": {
+        "item": [
+          {
+            "baseYm": "202507",
+            "mapX": "128.898613909450000",
+            "mapY": "37.753986783023300",
+            "areaCd": "51",
+            "areaNm": "강원특별자치도",
+            "signguCd": "51150",
+            "signguNm": "강릉시",
+            "hubTatsCd": "0c4e2344555b6361e8b22bce41ca942f",
+            "hubTatsNm": "강릉중앙시장",
+            "hubCtgryLclsNm": "관광지",
+            "hubCtgryMclsNm": "쇼핑",
+            "hubRank": "1"
+          },
+          {
+            "baseYm": "202507",
+            "mapX": "128.907862265888000",
+            "mapY": "37.805504253420700",
+            "areaCd": "51",
+            "areaNm": "강원특별자치도",
+            "signguCd": "51150",
+            "signguNm": "강릉시",
+            "hubTatsCd": "1597d21403f63da1bb0539592597a525",
+            "hubTatsNm": "경포해변",
+            "hubCtgryLclsNm": "관광지",
+            "hubCtgryMclsNm": "자연관광",
+            "hubRank": "2"
+          },
+          {
+            "baseYm": "202507",
+            "mapX": "128.920918376746000",
+            "mapY": "37.791181406042100",
+            "areaCd": "51",
+            "areaNm": "강원특별자치도",
+            "signguCd": "51150",
+            "signguNm": "강릉시",
+            "hubTatsCd": "0afe1a8a2e9c8ece08216a8b042519ac",
+            "hubTatsNm": "세인트존스호텔",
+            "hubCtgryLclsNm": "숙박",
+            "hubCtgryMclsNm": "숙박",
+            "hubRank": "3"
+          },
+          {
+            "baseYm": "202507",
+            "mapX": "128.827785063041000",
+            "mapY": "37.891077101292000",
+            "areaCd": "51",
+            "areaNm": "강원특별자치도",
+            "signguCd": "51150",
+            "signguNm": "강릉시",
+            "hubTatsCd": "036dc4574346753449969e74c51740ba",
+            "hubTatsNm": "주문진수산시장",
+            "hubCtgryLclsNm": "관광지",
+            "hubCtgryMclsNm": "쇼핑",
+            "hubRank": "4"
+          },
+          {
+            "baseYm": "202507",
+            "mapX": "128.907418031626000",
+            "mapY": "37.791755833133000",
+            "areaCd": "51",
+            "areaNm": "강원특별자치도",
+            "signguCd": "51150",
+            "signguNm": "강릉시",
+            "hubTatsCd": "843d3922d374dd0cdaf1664cef9ff4b3",
+            "hubTatsNm": "아르떼뮤지엄/강릉",
+            "hubCtgryLclsNm": "관광지",
+            "hubCtgryMclsNm": "문화관광",
+            "hubRank": "5"
+          }
+        ]
+      },
+      "numOfRows": 5,
+      "pageNo": 1,
+      "totalCount": 100
+    }
+  }
+}
