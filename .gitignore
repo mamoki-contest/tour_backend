@@ -40,3 +40,7 @@ out/
 .env
 .env.*
 !.env.example
+
+### 내려받은 원본 데이터 ###
+sample/*
+!sample/README.md
