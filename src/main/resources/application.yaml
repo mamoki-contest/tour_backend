@@ -48,6 +48,15 @@ tour:
       base-ym: ${LOCGO_HUB_BASE_YM:}
       connect-timeout: 5s
       read-timeout: 30s
+    naver:
+      # 검색 API 는 NAVER API HUB 로 이관되었다. 개발자센터 도메인·헤더로는 인증되지 않는다.
+      base-url: ${NAVER_API_HUB_BASE_URL:https://naverapihub.apigw.ntruss.com}
+      key-id: ${NAVER_API_HUB_KEY_ID:}
+      key: ${NAVER_API_HUB_KEY:}
+      connect-timeout: 5s
+      read-timeout: 15s
+      # 키당 50 RPS 한도. 배치가 이 간격을 지켜 호출한다.
+      call-delay: 50ms
   cors:
     # Vercel 배포 출처만 허용한다. 쉼표로 구분해 환경변수로 주입한다.
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
