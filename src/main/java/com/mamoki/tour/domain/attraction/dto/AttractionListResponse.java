@@ -31,6 +31,9 @@ public record AttractionListResponse(
         @Schema(description = "요청한 조회 개수", example = "20")
         int size,
 
+        @Schema(description = "적용된 정렬 기준. 정렬을 요청하지 않았으면 null")
+        AttractionSort sort,
+
         @Schema(description = """
                 데이터 상태.
                 AVAILABLE=유효, STALE=갱신 실패로 최종 정상 데이터 사용, NO_DATA=정보 없음""")
@@ -43,7 +46,8 @@ public record AttractionListResponse(
         String source
 ) {
 
-    public static AttractionListResponse noData(int page, int size, String source) {
-        return new AttractionListResponse(List.of(), 0, page, size, DataStatus.NO_DATA, null, source);
+    public static AttractionListResponse noData(int page, int size, String source, AttractionSort sort) {
+        return new AttractionListResponse(List.of(), 0, page, size, sort,
+                DataStatus.NO_DATA, null, source);
     }
 }

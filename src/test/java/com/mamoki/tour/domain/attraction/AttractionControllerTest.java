@@ -22,7 +22,11 @@ import com.mamoki.tour.domain.attraction.controller.AttractionController;
 import com.mamoki.tour.domain.attraction.dto.AttractionListResponse;
 import com.mamoki.tour.domain.attraction.dto.AttractionResponse;
 import com.mamoki.tour.domain.attraction.service.AttractionService;
+import com.mamoki.tour.domain.attraction.dto.OnlineMentionView;
+import com.mamoki.tour.domain.attraction.dto.TmapRankView;
+import com.mamoki.tour.domain.attraction.dto.VisitorStatsView;
 import com.mamoki.tour.global.enums.DataStatus;
+import com.mamoki.tour.global.enums.MentionStatus;
 import com.mamoki.tour.global.exception.GlobalExceptionHandler;
 
 class AttractionControllerTest {
@@ -48,8 +52,13 @@ class AttractionControllerTest {
                         "강원특별자치도 강릉시 공항길30번길 16",
                         new BigDecimal("37.7611934162"), new BigDecimal("128.9393320379"),
                         "39", "51150", "강릉시", null,
-                        LocalDateTime.of(2025, 9, 4, 14, 15, 26))),
-                676, 1, 20, DataStatus.AVAILABLE, LocalDateTime.of(2026, 9, 6, 12, 0), "KorService2"));
+                        LocalDateTime.of(2025, 9, 4, 14, 15, 26),
+                        new OnlineMentionView(MentionStatus.COLLECTED, 140006L,
+                                LocalDateTime.of(2026, 9, 6, 12, 0), "name+sigungu"),
+                        TmapRankView.notAvailable(),
+                        VisitorStatsView.notImported())),
+                676, 1, 20, null, DataStatus.AVAILABLE,
+                LocalDateTime.of(2026, 9, 6, 12, 0), "KorService2"));
 
         mvc.perform(get("/api/v1/attractions"))
                 .andExpect(status().isOk())
@@ -70,8 +79,11 @@ class AttractionControllerTest {
     void keepsMissingValuesNull() throws Exception {
         given(attractionService.search(any())).willReturn(new AttractionListResponse(
                 List.of(new AttractionResponse("1", "좌표 없는 장소", null, null, null, null,
-                        "12", null, null, null, null)),
-                1, 1, 20, DataStatus.AVAILABLE, LocalDateTime.now(), "KorService2"));
+                        "12", null, null, null, null,
+                        OnlineMentionView.notCollected(null),
+                        TmapRankView.notAvailable(),
+                        VisitorStatsView.notImported())),
+                1, 1, 20, null, DataStatus.AVAILABLE, LocalDateTime.now(), "KorService2"));
 
         mvc.perform(get("/api/v1/attractions"))
                 .andExpect(status().isOk())
@@ -84,7 +96,7 @@ class AttractionControllerTest {
     @DisplayName("공급자 데이터가 없어도 200 으로 응답하고 상태로 알린다")
     void returnsOkWithNoDataStatus() throws Exception {
         given(attractionService.search(any()))
-                .willReturn(AttractionListResponse.noData(1, 20, "KorService2"));
+                .willReturn(AttractionListResponse.noData(1, 20, "KorService2", null));
 
         mvc.perform(get("/api/v1/attractions"))
                 .andExpect(status().isOk())

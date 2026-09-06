@@ -1,9 +1,12 @@
 package com.mamoki.tour.domain.attraction.service;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,11 +16,16 @@ import com.mamoki.tour.domain.attraction.dto.AttractionListResponse;
 import com.mamoki.tour.domain.attraction.dto.AttractionResponse;
 import com.mamoki.tour.domain.attraction.dto.AttractionSearchRequest;
 import com.mamoki.tour.domain.attraction.dto.AttractionSnapshot;
+import com.mamoki.tour.domain.attraction.dto.AttractionSort;
+import com.mamoki.tour.domain.attraction.dto.OnlineMentionView;
+import com.mamoki.tour.domain.attraction.dto.TmapRankView;
+import com.mamoki.tour.domain.attraction.support.AttractionSortOrder;
 import com.mamoki.tour.domain.cache.dto.CachedResponse;
 import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
 import com.mamoki.tour.domain.region.entity.RegionCode;
 import com.mamoki.tour.domain.region.repository.RegionCodeRepository;
 import com.mamoki.tour.global.enums.ApiProvider;
+import com.mamoki.tour.global.enums.DataStatus;
 import com.mamoki.tour.global.exception.ExternalApiException;
 import com.mamoki.tour.infra.korservice.KorServiceClient;
 import com.mamoki.tour.infra.korservice.KorServiceItemConverter;
@@ -28,6 +36,9 @@ import com.mamoki.tour.infra.korservice.dto.KorServiceResponse;
  *
  * <p>공급자 호출은 캐시 계층을 거치므로 여기서 예외가 새어 나가지 않는다. 데이터를 얻지
  * 못하면 빈 목록이 아니라 {@code NO_DATA} 상태를 담은 응답을 돌려준다.
+ *
+ * <p>정렬을 요청하면 현재 조회 범위 전체를 모아 정렬한 뒤 페이지를 나눈다. 한 페이지 안에서만
+ * 정렬하면 공급자가 준 임의의 20건을 정렬하는 셈이라 순서에 의미가 없다.
  */
 @Service
 public class AttractionService {
@@ -38,73 +49,120 @@ public class AttractionService {
     private static final Duration CACHE_TTL = Duration.ofHours(24);
     private static final String OPERATION = "areaBasedList2";
 
+    /** 정렬을 위해 범위 전체를 모을 때 한 번에 받아오는 크기. */
+    private static final int SORT_FETCH_SIZE = 100;
+
+    /**
+     * 정렬 대상 상한. 강원 전체 관광지가 3천 건 이하라 이 값이면 범위 전체를 담는다.
+     * 넘어서면 공급자 순서 기준으로 잘리므로 정렬 결과가 범위 전체를 반영하지 못한다.
+     */
+    private static final int SORT_MAX_ITEMS = 3_000;
+
     private static final Logger log = LoggerFactory.getLogger(AttractionService.class);
 
     private final KorServiceClient korServiceClient;
     private final ExternalApiCacheService cacheService;
     private final RegionCodeRepository regionCodeRepository;
     private final CenterRankService centerRankService;
+    private final SignalLookupService signalLookupService;
+    private final AttractionSortOrder sortOrder = new AttractionSortOrder();
 
     public AttractionService(KorServiceClient korServiceClient,
                              ExternalApiCacheService cacheService,
                              RegionCodeRepository regionCodeRepository,
-                             CenterRankService centerRankService) {
+                             CenterRankService centerRankService,
+                             SignalLookupService signalLookupService) {
         this.korServiceClient = korServiceClient;
         this.cacheService = cacheService;
         this.regionCodeRepository = regionCodeRepository;
         this.centerRankService = centerRankService;
+        this.signalLookupService = signalLookupService;
     }
 
     public AttractionListResponse search(AttractionSearchRequest request) {
+        return request.sort() == null ? searchByProviderOrder(request) : searchSorted(request);
+    }
+
+    /** 정렬을 요청하지 않으면 공급자 페이지를 그대로 쓴다. */
+    private AttractionListResponse searchByProviderOrder(AttractionSearchRequest request) {
         int page = request.pageOrDefault();
         int size = request.sizeOrDefault();
 
-        String requestKey = korServiceClient.areaBasedListKey(
-                GANGWON_AREA_CODE, request.sigunguCode(), request.contentTypeId(), page, size);
+        Fetched fetched = fetchPage(request, page, size);
 
-        CachedResponse cached = cacheService.fetch(
-                ApiProvider.KOR_SERVICE2,
-                requestKey,
-                () -> korServiceClient.areaBasedListJson(
-                        GANGWON_AREA_CODE, request.sigunguCode(), request.contentTypeId(), page, size),
-                CACHE_TTL);
-
-        if (!cached.hasBody()) {
-            return AttractionListResponse.noData(page, size, KorServiceItemConverter.SOURCE);
+        if (fetched.isEmpty()) {
+            return AttractionListResponse.noData(page, size, KorServiceItemConverter.SOURCE, null);
         }
 
-        KorServiceResponse parsed;
-        try {
-            parsed = korServiceClient.parse(OPERATION, cached.body());
-        } catch (ExternalApiException e) {
-            // 캐시에 남아 있던 본문이 더 이상 해석되지 않는 경우. 빈 목록으로 위장하지 않는다.
-            log.warn("캐시된 KorService2 응답을 해석하지 못했습니다. requestKey={}", requestKey, e);
-            return AttractionListResponse.noData(page, size, KorServiceItemConverter.SOURCE);
+        List<AttractionResponse> items = toResponses(fetched.snapshots(), request.sigunguCode());
+
+        return new AttractionListResponse(items, fetched.totalCount(), page, size, null,
+                fetched.status(), fetched.collectedAt(), KorServiceItemConverter.SOURCE);
+    }
+
+    /**
+     * 조회 범위 전체를 모아 정렬한 뒤 페이지를 나눈다.
+     *
+     * <p>활성 언급량 스냅샷이 없으면 정렬 기준 자체가 없다. 그때는 순서를 만들어내지 않고
+     * 공급자 순서를 그대로 쓰며, 각 항목의 상태로 그 사실을 알린다.
+     */
+    private AttractionListResponse searchSorted(AttractionSearchRequest request) {
+        int page = request.pageOrDefault();
+        int size = request.sizeOrDefault();
+
+        Fetched fetched = fetchWholeRange(request);
+
+        if (fetched.isEmpty()) {
+            return AttractionListResponse.noData(page, size, KorServiceItemConverter.SOURCE, request.sort());
         }
 
-        List<AttractionSnapshot> snapshots = KorServiceItemConverter.convertAll(parsed.items());
+        List<AttractionResponse> all = toResponses(fetched.snapshots(), request.sigunguCode());
+        List<AttractionResponse> ordered = sortOrder.order(all, request.sort());
+        List<AttractionResponse> paged = pageOf(ordered, page, size);
+
+        return new AttractionListResponse(paged, ordered.size(), page, size, request.sort(),
+                fetched.status(), fetched.collectedAt(), KorServiceItemConverter.SOURCE);
+    }
+
+    private static List<AttractionResponse> pageOf(List<AttractionResponse> items, int page, int size) {
+        int from = Math.min((page - 1) * size, items.size());
+        int to = Math.min(from + size, items.size());
+
+        return items.subList(from, to);
+    }
+
+    private List<AttractionResponse> toResponses(List<AttractionSnapshot> snapshots, String sigunguCode) {
         Map<String, RegionCode> regionsByLawdCode = regionCodeRepository
                 .findAllByAreaCode(GANGWON_AREA_CODE).stream()
-                .collect(java.util.stream.Collectors.toMap(RegionCode::getLawdCode, Function.identity()));
+                .collect(Collectors.toMap(RegionCode::getLawdCode, Function.identity()));
 
-        // 중심관광지 순위는 시·군 내부 값이라 시·군이 특정될 때만 의미가 있다.
-        Map<String, Integer> centerRanks = resolveCenterRanks(request.sigunguCode(), snapshots);
+        Map<String, Integer> centerRanks = resolveCenterRanks(sigunguCode, snapshots);
 
-        List<AttractionResponse> items = snapshots.stream()
+        List<String> contentIds = snapshots.stream().map(AttractionSnapshot::contentId).toList();
+        Optional<Map<String, OnlineMentionView>> mentions =
+                signalLookupService.findOnlineMentions(contentIds);
+        Map<String, TmapRankView> tmapRanks = signalLookupService.findTmapRanks(contentIds);
+
+        String ruleVersion = signalLookupService.findMentionRuleVersion().orElse(null);
+
+        return snapshots.stream()
                 .map(snapshot -> AttractionResponse.of(
                         snapshot,
                         regionName(regionsByLawdCode, snapshot),
-                        centerRanks.get(snapshot.contentId())))
+                        centerRanks.get(snapshot.contentId()),
+                        mentionView(mentions, snapshot.contentId(), ruleVersion),
+                        tmapRanks.getOrDefault(snapshot.contentId(), TmapRankView.notAvailable())))
                 .toList();
+    }
 
-        return new AttractionListResponse(
-                items,
-                parsed.totalCount(),
-                page,
-                size,
-                cached.status(),
-                cached.collectedAt(),
-                KorServiceItemConverter.SOURCE);
+    /** 스냅샷 자체가 없으면 값이 아니라 아직 수집하지 않았다는 사실을 전달한다. */
+    private static OnlineMentionView mentionView(Optional<Map<String, OnlineMentionView>> mentions,
+                                                 String contentId, String ruleVersion) {
+        if (mentions.isEmpty()) {
+            return OnlineMentionView.notCollected(null);
+        }
+
+        return mentions.get().getOrDefault(contentId, OnlineMentionView.notCollected(ruleVersion));
     }
 
     /**
@@ -129,5 +187,83 @@ public class AttractionService {
 
         RegionCode regionCode = regionsByLawdCode.get(snapshot.lawdCode());
         return regionCode == null ? null : regionCode.getName();
+    }
+
+    private Fetched fetchPage(AttractionSearchRequest request, int page, int size) {
+        String requestKey = korServiceClient.areaBasedListKey(
+                GANGWON_AREA_CODE, request.sigunguCode(), request.contentTypeId(), page, size);
+
+        CachedResponse cached = cacheService.fetch(
+                ApiProvider.KOR_SERVICE2,
+                requestKey,
+                () -> korServiceClient.areaBasedListJson(
+                        GANGWON_AREA_CODE, request.sigunguCode(), request.contentTypeId(), page, size),
+                CACHE_TTL);
+
+        if (!cached.hasBody()) {
+            return Fetched.empty();
+        }
+
+        KorServiceResponse parsed;
+        try {
+            parsed = korServiceClient.parse(OPERATION, cached.body());
+        } catch (ExternalApiException e) {
+            // 캐시에 남아 있던 본문이 더 이상 해석되지 않는 경우. 빈 목록으로 위장하지 않는다.
+            log.warn("캐시된 KorService2 응답을 해석하지 못했습니다. requestKey={}", requestKey, e);
+            return Fetched.empty();
+        }
+
+        return new Fetched(KorServiceItemConverter.convertAll(parsed.items()),
+                parsed.totalCount(), cached.status(), cached.collectedAt());
+    }
+
+    /** 정렬 대상을 모으기 위해 조회 범위의 모든 페이지를 받아온다. */
+    private Fetched fetchWholeRange(AttractionSearchRequest request) {
+        List<AttractionSnapshot> all = new ArrayList<>();
+        Fetched first = fetchPage(request, 1, SORT_FETCH_SIZE);
+
+        if (first.isEmpty()) {
+            return first;
+        }
+
+        all.addAll(first.snapshots());
+
+        int totalCount = Math.min(first.totalCount(), SORT_MAX_ITEMS);
+        DataStatus status = first.status();
+
+        for (int page = 2; all.size() < totalCount; page++) {
+            Fetched next = fetchPage(request, page, SORT_FETCH_SIZE);
+
+            if (next.isEmpty() || next.snapshots().isEmpty()) {
+                break;
+            }
+
+            all.addAll(next.snapshots());
+
+            // 한 페이지라도 최종 정상 데이터로 응답했다면 전체를 그 상태로 알린다.
+            if (next.status() == DataStatus.STALE) {
+                status = DataStatus.STALE;
+            }
+        }
+
+        if (first.totalCount() > SORT_MAX_ITEMS) {
+            log.warn("정렬 대상이 상한을 넘었습니다. totalCount={}, 상한={}",
+                    first.totalCount(), SORT_MAX_ITEMS);
+        }
+
+        return new Fetched(all, all.size(), status, first.collectedAt());
+    }
+
+    /** 공급자에서 받아온 한 묶음과 그 데이터 상태. */
+    private record Fetched(List<AttractionSnapshot> snapshots, int totalCount,
+                           DataStatus status, java.time.LocalDateTime collectedAt) {
+
+        static Fetched empty() {
+            return new Fetched(List.of(), 0, DataStatus.NO_DATA, null);
+        }
+
+        boolean isEmpty() {
+            return status == DataStatus.NO_DATA && snapshots.isEmpty();
+        }
     }
 }
