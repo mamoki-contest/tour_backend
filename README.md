@@ -73,12 +73,21 @@ cp .env.example .env
 
 ## 외부 API
 
-| 공급자 | 용도 | 환경변수 |
-| --- | --- | --- |
-| KorService2 | 관광지 기본정보·검색 | `KOR_SERVICE_KEY` |
-| 한국관광콘텐츠랩 | 예측·연관·중심관광지 순위 | `VISIT_KOREA_KEY` (미신청) |
+| 서비스 | 용도 |
+| --- | --- |
+| `KorService2` | 관광지 기본정보·검색 |
+| `LocgoHubTarService1` | 시·군 내부 중심관광지 순위 |
+| `TatsCnctrRateService` | 향후 30일 방문 혼잡도 예측 |
+| `TarRlteTarService1` | 연관 관광지·음식점·숙박 |
+| `DataLabService` | 지역별 방문자수 |
 
-공공데이터포털 인증키는 **Encoding 키**를 그대로 넣습니다. 이미 URL 인코딩된 문자열이라
+모두 공공데이터포털에서 제공하며 **인증키 하나(`KOR_SERVICE_KEY`)를 공유**합니다.
+계정당 인증키는 하나이고, 서비스별로는 활용신청으로 권한만 붙습니다.
+
+관광지 관심도는 API 가 아니라 한국관광 데이터랩 공식 CSV/Excel 로 적재합니다.
+기존 관광빅데이터정보서비스 API 는 폐기되었습니다.
+
+인증키는 **Encoding 키**를 그대로 넣습니다. 이미 URL 인코딩된 문자열이라
 한 번 더 인코딩하면 인증에 실패하므로, `KorServiceClient` 가 이 값만 인코딩하지 않고 붙입니다.
 
 일부 네트워크에서 `apis.data.go.kr` 의 HTTPS 핸드셰이크가 실패합니다.

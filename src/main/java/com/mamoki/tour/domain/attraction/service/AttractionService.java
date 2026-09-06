@@ -43,13 +43,16 @@ public class AttractionService {
     private final KorServiceClient korServiceClient;
     private final ExternalApiCacheService cacheService;
     private final RegionCodeRepository regionCodeRepository;
+    private final CenterRankService centerRankService;
 
     public AttractionService(KorServiceClient korServiceClient,
                              ExternalApiCacheService cacheService,
-                             RegionCodeRepository regionCodeRepository) {
+                             RegionCodeRepository regionCodeRepository,
+                             CenterRankService centerRankService) {
         this.korServiceClient = korServiceClient;
         this.cacheService = cacheService;
         this.regionCodeRepository = regionCodeRepository;
+        this.centerRankService = centerRankService;
     }
 
     public AttractionListResponse search(AttractionSearchRequest request) {
@@ -84,8 +87,14 @@ public class AttractionService {
                 .findAllByAreaCode(GANGWON_AREA_CODE).stream()
                 .collect(java.util.stream.Collectors.toMap(RegionCode::getLawdCode, Function.identity()));
 
+        // 중심관광지 순위는 시·군 내부 값이라 시·군이 특정될 때만 의미가 있다.
+        Map<String, Integer> centerRanks = resolveCenterRanks(request.sigunguCode(), snapshots);
+
         List<AttractionResponse> items = snapshots.stream()
-                .map(snapshot -> AttractionResponse.of(snapshot, regionName(regionsByLawdCode, snapshot)))
+                .map(snapshot -> AttractionResponse.of(
+                        snapshot,
+                        regionName(regionsByLawdCode, snapshot),
+                        centerRanks.get(snapshot.contentId())))
                 .toList();
 
         return new AttractionListResponse(
@@ -96,6 +105,20 @@ public class AttractionService {
                 cached.status(),
                 cached.collectedAt(),
                 KorServiceItemConverter.SOURCE);
+    }
+
+    /**
+     * 시·군을 지정하지 않으면 순위를 붙이지 않는다. 목록이 여러 시·군에 걸칠 때
+     * 각 시·군의 내부 순위를 한 줄에 섞으면 시·군 사이의 순위처럼 읽히기 때문이다.
+     */
+    private Map<String, Integer> resolveCenterRanks(String sigunguCode, List<AttractionSnapshot> snapshots) {
+        if (sigunguCode == null || snapshots.isEmpty()) {
+            return Map.of();
+        }
+
+        return regionCodeRepository.findByAreaCodeAndSigunguCode(GANGWON_AREA_CODE, sigunguCode)
+                .map(region -> centerRankService.resolveRanks(region.getLawdCode(), snapshots))
+                .orElseGet(Map::of);
     }
 
     /** 매핑이 없으면 지역명을 만들어내지 않고 null 로 둔다. */
