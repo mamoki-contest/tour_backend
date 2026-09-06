@@ -1,5 +1,6 @@
 package com.mamoki.tour.global.rsdata;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
@@ -11,9 +12,16 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  */
 @JsonInclude(JsonInclude.Include.ALWAYS)
 public record RsData<T>(
+        @Schema(description = "{HTTP 상태}-{일련번호} 형식의 결과 코드", example = "200-1")
         String resultCode,
+
+        @Schema(description = "HTTP 응답 상태와 항상 일치합니다.", example = "200")
         int statusCode,
+
+        @Schema(description = "사람이 읽는 메시지. 프론트 분기 조건으로 쓰지 마세요.")
         String msg,
+
+        @Schema(description = "성공 시 페이로드, 실패 시 null 또는 검증 오류 상세")
         T data
 ) {
 
