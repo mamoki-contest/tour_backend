@@ -1,4 +1,4 @@
-package com.mamoki.tour.domain.interest.importer;
+package com.mamoki.tour.domain.tmaprank.importer;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -20,33 +20,33 @@ import java.util.zip.ZipFile;
  * <p>연령대는 파일명이 아니라 CSV 안의 값으로 판단한다. 파일명은 표기가 바뀔 수 있지만
  * 데이터 자체는 그렇지 않다.
  */
-public final class InterestZipReader {
+public final class TmapRankZipReader {
 
     static final Set<String> REQUIRED_AGE_GROUPS = Set.of("전체", "20", "30", "40", "50", "60");
 
-    private InterestZipReader() {
+    private TmapRankZipReader() {
     }
 
-    public static InterestZipContent read(Path zipPath) {
-        InterestFileName source = InterestFileName.parse(zipPath.getFileName().toString());
+    public static TmapRankZipContent read(Path zipPath) {
+        TmapRankFileName source = TmapRankFileName.parse(zipPath.getFileName().toString());
 
-        Map<String, List<InterestCsvRow>> byAgeGroup = readAgeGroups(zipPath);
+        Map<String, List<TmapRankCsvRow>> byAgeGroup = readAgeGroups(zipPath);
 
         if (!byAgeGroup.keySet().equals(REQUIRED_AGE_GROUPS)) {
-            throw new InterestImportException(
+            throw new TmapRankImportException(
                     "세대별 파일이 온전하지 않습니다: %s (기대: %s, 실제: %s)"
                             .formatted(zipPath.getFileName(),
                                     sorted(REQUIRED_AGE_GROUPS), sorted(byAgeGroup.keySet())));
         }
 
-        return new InterestZipContent(
+        return new TmapRankZipContent(
                 source,
-                byAgeGroup.get(InterestCsvRow.AGE_GROUP_ALL),
+                byAgeGroup.get(TmapRankCsvRow.AGE_GROUP_ALL),
                 sorted(byAgeGroup.keySet()));
     }
 
-    private static Map<String, List<InterestCsvRow>> readAgeGroups(Path zipPath) {
-        Map<String, List<InterestCsvRow>> byAgeGroup = new LinkedHashMap<>();
+    private static Map<String, List<TmapRankCsvRow>> readAgeGroups(Path zipPath) {
+        Map<String, List<TmapRankCsvRow>> byAgeGroup = new LinkedHashMap<>();
 
         try (ZipFile zip = new ZipFile(zipPath.toFile())) {
             var entries = zip.entries();
@@ -59,35 +59,35 @@ public final class InterestZipReader {
                 }
 
                 try (InputStream in = zip.getInputStream(entry)) {
-                    List<InterestCsvRow> rows = InterestCsvParser.parse(in, entry.getName());
+                    List<TmapRankCsvRow> rows = TmapRankCsvParser.parse(in, entry.getName());
                     putRows(byAgeGroup, rows, entry.getName(), zipPath);
                 }
             }
         } catch (IOException e) {
-            throw new InterestImportException("zip 을 읽지 못했습니다: " + zipPath.getFileName(), e);
+            throw new TmapRankImportException("zip 을 읽지 못했습니다: " + zipPath.getFileName(), e);
         }
 
         if (byAgeGroup.isEmpty()) {
-            throw new InterestImportException("zip 안에 CSV 가 없습니다: " + zipPath.getFileName());
+            throw new TmapRankImportException("zip 안에 CSV 가 없습니다: " + zipPath.getFileName());
         }
 
         return byAgeGroup;
     }
 
     /** 한 파일 안에서 연령대가 섞여 있으면 파일이 잘못 만들어진 것으로 본다. */
-    private static void putRows(Map<String, List<InterestCsvRow>> byAgeGroup,
-                                List<InterestCsvRow> rows, String entryName, Path zipPath) {
+    private static void putRows(Map<String, List<TmapRankCsvRow>> byAgeGroup,
+                                List<TmapRankCsvRow> rows, String entryName, Path zipPath) {
 
         String ageGroup = rows.get(0).ageGroup();
 
         boolean mixed = rows.stream().anyMatch(row -> !ageGroup.equals(row.ageGroup()));
         if (mixed) {
-            throw new InterestImportException(
+            throw new TmapRankImportException(
                     "한 파일에 여러 연령대가 섞여 있습니다: %s / %s".formatted(zipPath.getFileName(), entryName));
         }
 
         if (byAgeGroup.putIfAbsent(ageGroup, rows) != null) {
-            throw new InterestImportException(
+            throw new TmapRankImportException(
                     "같은 연령대 파일이 두 번 들어 있습니다: %s / %s (%s)"
                             .formatted(zipPath.getFileName(), entryName, ageGroup));
         }

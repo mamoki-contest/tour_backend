@@ -1,4 +1,4 @@
-package com.mamoki.tour.domain.interest;
+package com.mamoki.tour.domain.tmaprank;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -16,13 +16,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import com.mamoki.tour.domain.interest.importer.InterestCsvRow;
-import com.mamoki.tour.domain.interest.importer.InterestImportException;
-import com.mamoki.tour.domain.interest.importer.InterestZipContent;
-import com.mamoki.tour.domain.interest.importer.InterestZipReader;
+import com.mamoki.tour.domain.tmaprank.importer.TmapRankCsvRow;
+import com.mamoki.tour.domain.tmaprank.importer.TmapRankImportException;
+import com.mamoki.tour.domain.tmaprank.importer.TmapRankZipContent;
+import com.mamoki.tour.domain.tmaprank.importer.TmapRankZipReader;
 
 /** 저장소에 함께 추적하는 실제 다운로드 zip 으로 검증한다. */
-class InterestZipReaderTest {
+class TmapRankZipReaderTest {
 
     private static final Path SAMPLE_DIR = Path.of("sample");
     private static final String HEADER = "\uFEFF순위,관광지ID,관심지점명,구분,연령대,비율";
@@ -39,13 +39,13 @@ class InterestZipReaderTest {
     @Test
     @DisplayName("실제 다운로드 zip 을 읽는다")
     void readsRealZip() throws Exception {
-        InterestZipContent content = InterestZipReader.read(realZip("강릉시"));
+        TmapRankZipContent content = TmapRankZipReader.read(realZip("강릉시"));
 
         assertThat(content.source().sigungu()).isEqualTo("강릉시");
         assertThat(content.source().sourcePeriod()).isEqualTo("202508-202607");
         assertThat(content.ageGroups()).containsExactlyInAnyOrder("전체", "20", "30", "40", "50", "60");
         assertThat(content.allAgesRows()).hasSize(30);
-        assertThat(content.allAgesRows()).allMatch(InterestCsvRow::isAllAges);
+        assertThat(content.allAgesRows()).allMatch(TmapRankCsvRow::isAllAges);
     }
 
     @Test
@@ -56,7 +56,7 @@ class InterestZipReaderTest {
 
             assertThat(zips).hasSize(18);
             assertThat(zips).allSatisfy(zip -> {
-                InterestZipContent content = InterestZipReader.read(zip);
+                TmapRankZipContent content = TmapRankZipReader.read(zip);
                 assertThat(content.allAgesRows()).isNotEmpty();
                 assertThat(content.ageGroups()).hasSize(6);
             });
@@ -70,8 +70,8 @@ class InterestZipReaderTest {
                 "20260906205547_강원특별자치도+강릉시_202508-202607_데이터랩_다운로드.zip");
         writeZip(zip, List.of("전체", "20"));
 
-        assertThatThrownBy(() -> InterestZipReader.read(zip))
-                .isInstanceOf(InterestImportException.class)
+        assertThatThrownBy(() -> TmapRankZipReader.read(zip))
+                .isInstanceOf(TmapRankImportException.class)
                 .hasMessageContaining("세대별 파일이 온전하지 않습니다");
     }
 
@@ -82,8 +82,8 @@ class InterestZipReaderTest {
                 "20260906205547_강원특별자치도+강릉시_202508-202607_데이터랩_다운로드.zip");
         writeZip(zip, List.of());
 
-        assertThatThrownBy(() -> InterestZipReader.read(zip))
-                .isInstanceOf(InterestImportException.class)
+        assertThatThrownBy(() -> TmapRankZipReader.read(zip))
+                .isInstanceOf(TmapRankImportException.class)
                 .hasMessageContaining("CSV 가 없습니다");
     }
 
@@ -100,8 +100,8 @@ class InterestZipReaderTest {
             out.closeEntry();
         }
 
-        assertThatThrownBy(() -> InterestZipReader.read(zip))
-                .isInstanceOf(InterestImportException.class)
+        assertThatThrownBy(() -> TmapRankZipReader.read(zip))
+                .isInstanceOf(TmapRankImportException.class)
                 .hasMessageContaining("여러 연령대가 섞여");
     }
 

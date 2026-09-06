@@ -1,4 +1,4 @@
-package com.mamoki.tour.domain.interest.importer;
+package com.mamoki.tour.domain.tmaprank.importer;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -13,12 +13,12 @@ import org.springframework.transaction.annotation.Transactional;
 import com.mamoki.tour.domain.attraction.entity.Attraction;
 import com.mamoki.tour.domain.attraction.repository.AttractionRepository;
 import com.mamoki.tour.domain.attraction.support.PlaceNameNormalizer;
-import com.mamoki.tour.domain.interest.entity.AttractionInterest;
-import com.mamoki.tour.domain.interest.entity.InterestSnapshot;
-import com.mamoki.tour.domain.interest.repository.AttractionInterestRepository;
-import com.mamoki.tour.domain.interest.repository.InterestSnapshotRepository;
-import com.mamoki.tour.domain.interest.service.InterestSnapshotService;
-import com.mamoki.tour.global.enums.InterestMatchStatus;
+import com.mamoki.tour.domain.tmaprank.entity.TmapRankEntry;
+import com.mamoki.tour.domain.tmaprank.entity.TmapRankSnapshot;
+import com.mamoki.tour.domain.tmaprank.repository.TmapRankEntryRepository;
+import com.mamoki.tour.domain.tmaprank.repository.TmapRankSnapshotRepository;
+import com.mamoki.tour.domain.tmaprank.service.TmapRankSnapshotService;
+import com.mamoki.tour.global.enums.CatalogMatchStatus;
 import com.mamoki.tour.global.enums.SnapshotStatus;
 
 /**
@@ -28,29 +28,29 @@ import com.mamoki.tour.global.enums.SnapshotStatus;
  * 롤백될 때 이력까지 사라져, 무엇이 왜 실패했는지 남지 않는다.
  */
 @Service
-public class InterestSnapshotWriter {
+public class TmapRankSnapshotWriter {
 
-    private final InterestSnapshotRepository snapshotRepository;
-    private final AttractionInterestRepository interestRepository;
+    private final TmapRankSnapshotRepository snapshotRepository;
+    private final TmapRankEntryRepository tmapRankEntryRepository;
     private final AttractionRepository attractionRepository;
-    private final InterestSnapshotService snapshotService;
+    private final TmapRankSnapshotService snapshotService;
 
-    public InterestSnapshotWriter(InterestSnapshotRepository snapshotRepository,
-                                  AttractionInterestRepository interestRepository,
+    public TmapRankSnapshotWriter(TmapRankSnapshotRepository snapshotRepository,
+                                  TmapRankEntryRepository tmapRankEntryRepository,
                                   AttractionRepository attractionRepository,
-                                  InterestSnapshotService snapshotService) {
+                                  TmapRankSnapshotService snapshotService) {
         this.snapshotRepository = snapshotRepository;
-        this.interestRepository = interestRepository;
+        this.tmapRankEntryRepository = tmapRankEntryRepository;
         this.attractionRepository = attractionRepository;
         this.snapshotService = snapshotService;
     }
 
     @Transactional
-    public InterestImportResult persist(List<InterestZipContent> contents,
+    public TmapRankImportResult persist(List<TmapRankZipContent> contents,
                                         String sourceName, LocalDate downloadedOn) {
 
         String sourcePeriod = contents.get(0).source().sourcePeriod();
-        InterestSnapshot snapshot = snapshotRepository.save(InterestSnapshot.builder()
+        TmapRankSnapshot snapshot = snapshotRepository.save(TmapRankSnapshot.builder()
                 .version(nextVersion(sourcePeriod, downloadedOn))
                 .sourcePeriod(sourcePeriod)
                 .downloadedOn(downloadedOn)
@@ -65,21 +65,21 @@ public class InterestSnapshotWriter {
         int matched = 0;
         int total = 0;
 
-        for (InterestZipContent content : contents) {
-            for (InterestCsvRow row : content.allAgesRows()) {
+        for (TmapRankZipContent content : contents) {
+            for (TmapRankCsvRow row : content.allAgesRows()) {
                 String normalized = PlaceNameNormalizer.normalize(row.placeName());
                 String contentId = normalized == null ? null : catalogByNormalizedName.get(normalized);
 
-                interestRepository.save(AttractionInterest.builder()
+                tmapRankEntryRepository.save(TmapRankEntry.builder()
                         .snapshot(snapshot)
                         .rawRegionName(content.source().sigungu())
                         .rawPlaceName(row.placeName())
                         .normalizedName(normalized == null ? row.placeName() : normalized)
-                        .interestValue(row.ratio())
+                        .searchRatio(row.ratio())
                         .sourceRank(row.rank())
                         .contentId(contentId)
                         .matchStatus(contentId == null
-                                ? InterestMatchStatus.UNMATCHED : InterestMatchStatus.MATCHED)
+                                ? CatalogMatchStatus.UNMATCHED : CatalogMatchStatus.MATCHED)
                         .build());
 
                 total++;
@@ -91,13 +91,13 @@ public class InterestSnapshotWriter {
 
         snapshotService.activate(snapshot);
 
-        return new InterestImportResult(snapshot, contents.size(), total, matched, total - matched);
+        return new TmapRankImportResult(snapshot, contents.size(), total, matched, total - matched);
     }
 
     /** 실패 이력은 본 트랜잭션과 분리해 남긴다. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public InterestSnapshot recordFailure(String sourceName, LocalDate downloadedOn, String reason) {
-        InterestSnapshot failed = snapshotRepository.save(InterestSnapshot.builder()
+    public TmapRankSnapshot recordFailure(String sourceName, LocalDate downloadedOn, String reason) {
+        TmapRankSnapshot failed = snapshotRepository.save(TmapRankSnapshot.builder()
                 .version(nextVersion("unknown", downloadedOn))
                 .sourcePeriod("unknown")
                 .downloadedOn(downloadedOn)
@@ -111,7 +111,7 @@ public class InterestSnapshotWriter {
         return failed;
     }
 
-    /** 관심도 CSV 에는 좌표가 없어 이름으로만 잇는다. 카탈로그가 비어 있으면 매칭은 0건이다. */
+    /** TMAP CSV 에는 좌표가 없어 이름으로만 잇는다. 카탈로그가 비어 있으면 매칭은 0건이다. */
     private Map<String, String> loadCatalog() {
         Map<String, String> byNormalizedName = new HashMap<>();
 
@@ -141,6 +141,6 @@ public class InterestSnapshotWriter {
             }
         }
 
-        throw new InterestImportException("같은 날 적재 횟수가 너무 많습니다: " + base);
+        throw new TmapRankImportException("같은 날 적재 횟수가 너무 많습니다: " + base);
     }
 }

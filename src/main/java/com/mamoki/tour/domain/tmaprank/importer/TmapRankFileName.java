@@ -1,4 +1,4 @@
-package com.mamoki.tour.domain.interest.importer;
+package com.mamoki.tour.domain.tmaprank.importer;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
  * @param startYearMonth 원천 조회 시작월 (202508)
  * @param endYearMonth   원천 조회 종료월 (202607)
  */
-public record InterestFileName(
+public record TmapRankFileName(
         String downloadedAt,
         String sido,
         String sigungu,
@@ -27,15 +27,15 @@ public record InterestFileName(
     private static final Pattern PATTERN = Pattern.compile(
             "^(\\d{14})_([^+_]+)\\+([^+_]+)_(\\d{6})-(\\d{6})_.*\\.zip$");
 
-    public static InterestFileName parse(String fileName) {
+    public static TmapRankFileName parse(String fileName) {
         Matcher matcher = PATTERN.matcher(fileName);
 
         if (!matcher.matches()) {
-            throw new InterestImportException(
+            throw new TmapRankImportException(
                     "데이터랩 다운로드 파일명 형식이 아닙니다: " + fileName);
         }
 
-        return new InterestFileName(
+        return new TmapRankFileName(
                 matcher.group(1),
                 matcher.group(2),
                 matcher.group(3),

@@ -1,4 +1,4 @@
-package com.mamoki.tour.domain.interest;
+package com.mamoki.tour.domain.tmaprank;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -22,37 +22,37 @@ import org.springframework.test.context.ActiveProfiles;
 
 import com.mamoki.tour.domain.attraction.entity.Attraction;
 import com.mamoki.tour.domain.attraction.repository.AttractionRepository;
-import com.mamoki.tour.domain.interest.entity.AttractionInterest;
-import com.mamoki.tour.domain.interest.importer.InterestImportException;
-import com.mamoki.tour.domain.interest.importer.InterestImportResult;
-import com.mamoki.tour.domain.interest.importer.InterestImportService;
-import com.mamoki.tour.domain.interest.repository.AttractionInterestRepository;
-import com.mamoki.tour.domain.interest.repository.InterestSnapshotRepository;
-import com.mamoki.tour.domain.interest.service.InterestSnapshotService;
+import com.mamoki.tour.domain.tmaprank.entity.TmapRankEntry;
+import com.mamoki.tour.domain.tmaprank.importer.TmapRankImportException;
+import com.mamoki.tour.domain.tmaprank.importer.TmapRankImportResult;
+import com.mamoki.tour.domain.tmaprank.importer.TmapRankImportService;
+import com.mamoki.tour.domain.tmaprank.repository.TmapRankEntryRepository;
+import com.mamoki.tour.domain.tmaprank.repository.TmapRankSnapshotRepository;
+import com.mamoki.tour.domain.tmaprank.service.TmapRankSnapshotService;
 import com.mamoki.tour.domain.region.entity.RegionCode;
 import com.mamoki.tour.domain.region.repository.RegionCodeRepository;
 import com.mamoki.tour.global.enums.DataStatus;
-import com.mamoki.tour.global.enums.InterestMatchStatus;
+import com.mamoki.tour.global.enums.CatalogMatchStatus;
 import com.mamoki.tour.global.enums.SnapshotStatus;
 
 @SpringBootTest
 @ActiveProfiles("test")
-class InterestImportServiceTest {
+class TmapRankImportServiceTest {
 
     private static final Path SAMPLE_DIR = Path.of("sample");
     private static final LocalDate DOWNLOADED_ON = LocalDate.of(2026, 9, 6);
 
     @Autowired
-    private InterestImportService importService;
+    private TmapRankImportService importService;
 
     @Autowired
-    private InterestSnapshotService snapshotService;
+    private TmapRankSnapshotService snapshotService;
 
     @Autowired
-    private InterestSnapshotRepository snapshotRepository;
+    private TmapRankSnapshotRepository snapshotRepository;
 
     @Autowired
-    private AttractionInterestRepository interestRepository;
+    private TmapRankEntryRepository tmapRankEntryRepository;
 
     @Autowired
     private AttractionRepository attractionRepository;
@@ -66,7 +66,7 @@ class InterestImportServiceTest {
      */
     @BeforeEach
     void clearPreviousImports() {
-        interestRepository.deleteAllInBatch();
+        tmapRankEntryRepository.deleteAllInBatch();
         snapshotRepository.deleteAllInBatch();
         attractionRepository.deleteAllInBatch();
     }
@@ -78,7 +78,7 @@ class InterestImportServiceTest {
     @Test
     @DisplayName("실제 18개 시·군 zip 을 하나의 스냅샷으로 적재하고 활성화한다")
     void importsAllRegionsIntoOneSnapshot() {
-        InterestImportResult result = importService.importFrom(SAMPLE_DIR, DOWNLOADED_ON);
+        TmapRankImportResult result = importService.importFrom(SAMPLE_DIR, DOWNLOADED_ON);
 
         assertThat(result.regionCount()).isEqualTo(18);
         assertThat(result.totalRows()).isEqualTo(18 * 30);
@@ -91,16 +91,16 @@ class InterestImportServiceTest {
     @Test
     @DisplayName("원본 지역명과 관광지명을 그대로 보존한다")
     void keepsRawValues() {
-        InterestImportResult result = importService.importFrom(SAMPLE_DIR, DOWNLOADED_ON);
+        TmapRankImportResult result = importService.importFrom(SAMPLE_DIR, DOWNLOADED_ON);
 
-        List<AttractionInterest> rows = interestRepository.findAll().stream()
+        List<TmapRankEntry> rows = tmapRankEntryRepository.findAll().stream()
                 .filter(row -> row.getSnapshot().getId().equals(result.snapshot().getId()))
                 .toList();
 
         assertThat(rows).anySatisfy(row -> {
             assertThat(row.getRawRegionName()).isEqualTo("강릉시");
             assertThat(row.getRawPlaceName()).isEqualTo("경포해변");
-            assertThat(row.getInterestValue()).isEqualByComparingTo(new BigDecimal("14.6"));
+            assertThat(row.getSearchRatio()).isEqualByComparingTo(new BigDecimal("14.6"));
             assertThat(row.getSourceRank()).isEqualTo(1);
         });
     }
@@ -118,40 +118,40 @@ class InterestImportServiceTest {
                 .source("KorService2")
                 .build());
 
-        InterestImportResult result = importService.importFrom(SAMPLE_DIR, DOWNLOADED_ON);
+        TmapRankImportResult result = importService.importFrom(SAMPLE_DIR, DOWNLOADED_ON);
 
         assertThat(result.matchedRows()).isPositive();
-        assertThat(interestRepository.findAll())
+        assertThat(tmapRankEntryRepository.findAll())
                 .filteredOn(row -> "경포해변".equals(row.getRawPlaceName()))
                 .anySatisfy(row -> {
                     assertThat(row.getContentId()).isEqualTo("126508");
-                    assertThat(row.getMatchStatus()).isEqualTo(InterestMatchStatus.MATCHED);
-                    assertThat(row.isUsableForSorting()).isTrue();
+                    assertThat(row.getMatchStatus()).isEqualTo(CatalogMatchStatus.MATCHED);
+                    assertThat(row.isMatched()).isTrue();
                 });
     }
 
     @Test
     @DisplayName("카탈로그에 없는 장소는 매칭하지 않고 정렬에도 쓰지 않는다")
     void leavesUnmatchedRowsOut() {
-        InterestImportResult result = importService.importFrom(SAMPLE_DIR, DOWNLOADED_ON);
+        TmapRankImportResult result = importService.importFrom(SAMPLE_DIR, DOWNLOADED_ON);
 
         assertThat(result.unmatchedRows()).isPositive();
-        assertThat(interestRepository.findAll())
-                .filteredOn(row -> row.getMatchStatus() == InterestMatchStatus.UNMATCHED)
+        assertThat(tmapRankEntryRepository.findAll())
+                .filteredOn(row -> row.getMatchStatus() == CatalogMatchStatus.UNMATCHED)
                 .allSatisfy(row -> {
                     assertThat(row.getContentId()).isNull();
-                    assertThat(row.isUsableForSorting()).isFalse();
+                    assertThat(row.isMatched()).isFalse();
                 });
     }
 
     @Test
     @DisplayName("시·군이 빠지면 적재를 거부하고 직전 정상 스냅샷을 유지한다")
     void rejectsMissingRegionAndKeepsPreviousSnapshot(@TempDir Path partialDir) throws IOException {
-        InterestImportResult previous = importService.importFrom(SAMPLE_DIR, DOWNLOADED_ON);
+        TmapRankImportResult previous = importService.importFrom(SAMPLE_DIR, DOWNLOADED_ON);
         copyZips(partialDir, 17);
 
         assertThatThrownBy(() -> importService.importFrom(partialDir, DOWNLOADED_ON))
-                .isInstanceOf(InterestImportException.class)
+                .isInstanceOf(TmapRankImportException.class)
                 .hasMessageContaining("시·군 파일이 빠졌습니다");
 
         assertThat(activeSnapshotId()).isEqualTo(previous.snapshot().getId());
@@ -164,7 +164,7 @@ class InterestImportServiceTest {
     @DisplayName("실패 사유가 적재 이력에 남는다")
     void recordsFailureReason(@TempDir Path emptyDir) {
         assertThatThrownBy(() -> importService.importFrom(emptyDir, DOWNLOADED_ON))
-                .isInstanceOf(InterestImportException.class)
+                .isInstanceOf(TmapRankImportException.class)
                 .hasMessageContaining("적재할 zip");
 
         assertThat(snapshotRepository.findAll())
@@ -176,8 +176,8 @@ class InterestImportServiceTest {
     @Test
     @DisplayName("두 번 적재하면 직전 스냅샷은 물러나고 활성은 하나만 남는다")
     void replacesActiveSnapshotOnReimport() {
-        InterestImportResult first = importService.importFrom(SAMPLE_DIR, DOWNLOADED_ON);
-        InterestImportResult second = importService.importFrom(SAMPLE_DIR, DOWNLOADED_ON);
+        TmapRankImportResult first = importService.importFrom(SAMPLE_DIR, DOWNLOADED_ON);
+        TmapRankImportResult second = importService.importFrom(SAMPLE_DIR, DOWNLOADED_ON);
 
         assertThat(snapshotRepository.findByVersion(first.snapshot().getVersion()))
                 .get()

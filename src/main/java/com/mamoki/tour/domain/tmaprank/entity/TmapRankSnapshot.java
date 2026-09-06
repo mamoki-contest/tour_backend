@@ -1,4 +1,4 @@
-package com.mamoki.tour.domain.interest.entity;
+package com.mamoki.tour.domain.tmaprank.entity;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -19,7 +19,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 관광지 관심도 CSV 적재 단위.
+ * TMAP 지역별 관광지 검색순위 CSV 적재 단위.
  *
  * <p>한국관광 데이터랩 공식 파일을 한 번 적재할 때마다 한 행이 생긴다. 적재에 실패한
  * 시도도 이력으로 남기므로, 이 테이블은 곧 적재 이력이기도 하다.
@@ -30,12 +30,12 @@ import lombok.NoArgsConstructor;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(
-        name = "interest_snapshot",
+        name = "tmap_rank_snapshot",
         uniqueConstraints = @UniqueConstraint(
-                name = "uk_interest_snapshot_version", columnNames = "version"),
-        indexes = @Index(name = "idx_interest_snapshot_status", columnList = "status")
+                name = "uk_tmap_rank_snapshot_version", columnNames = "version"),
+        indexes = @Index(name = "idx_tmap_rank_snapshot_status", columnList = "status")
 )
-public class InterestSnapshot extends BaseEntity {
+public class TmapRankSnapshot extends BaseEntity {
 
     /** 스냅샷 버전. 응답에 노출해 프론트가 어떤 적재분을 보고 있는지 알 수 있게 한다. */
     @Column(name = "version", nullable = false, length = 40)
@@ -61,7 +61,7 @@ public class InterestSnapshot extends BaseEntity {
     @Column(name = "source_file_name", nullable = false, length = 300)
     private String sourceFileName;
 
-    /** 적재된 관심도 행 수. */
+    /** 적재된 순위 행 수. */
     @Column(name = "row_count", nullable = false)
     private int rowCount;
 
@@ -70,7 +70,7 @@ public class InterestSnapshot extends BaseEntity {
     private String failureReason;
 
     @Builder
-    private InterestSnapshot(String version, String sourcePeriod, LocalDate downloadedOn,
+    private TmapRankSnapshot(String version, String sourcePeriod, LocalDate downloadedOn,
                              LocalDateTime importedAt, SnapshotStatus status,
                              String sourceFileName, int rowCount, String failureReason) {
         this.version = version;
