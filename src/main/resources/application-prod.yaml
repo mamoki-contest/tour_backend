@@ -1,0 +1,11 @@
+spring:
+  config:
+    activate:
+      on-profile: prod
+  datasource:
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+  jpa:
+    hibernate:
+      # 운영 스키마를 삭제하지 않도록 create / create-drop 을 사용하지 않는다.
+      ddl-auto: update
+    show-sql: false
