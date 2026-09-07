@@ -56,7 +56,8 @@ class AttractionControllerTest {
                         new OnlineMentionView(MentionStatus.COLLECTED, 140006L,
                                 LocalDateTime.of(2026, 9, 6, 12, 0), "name+sigungu"),
                         TmapRankView.notAvailable(),
-                        VisitorStatsView.notImported())),
+                        VisitorStatsView.notImported(),
+                        null)),
                 676, 1, 20, null, DataStatus.AVAILABLE,
                 LocalDateTime.of(2026, 9, 6, 12, 0), "KorService2"));
 
@@ -82,7 +83,8 @@ class AttractionControllerTest {
                         "12", null, null, null, null,
                         OnlineMentionView.notCollected(null),
                         TmapRankView.notAvailable(),
-                        VisitorStatsView.notImported())),
+                        VisitorStatsView.notImported(),
+                        null)),
                 1, 1, 20, null, DataStatus.AVAILABLE, LocalDateTime.now(), "KorService2"));
 
         mvc.perform(get("/api/v1/attractions"))
