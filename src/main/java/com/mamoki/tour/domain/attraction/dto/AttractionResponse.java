@@ -48,14 +48,32 @@ public record AttractionResponse(
         Integer centerRank,
 
         @Schema(description = "이 항목의 공급자 기준 시점. 서버 저장 시각이 아닙니다.")
-        LocalDateTime baseAt
+        LocalDateTime baseAt,
+
+        @Schema(description = "온라인 언급량. 목록 정렬의 주 지표")
+        OnlineMentionView onlineMention,
+
+        @Schema(description = "시·군 내 TMAP 검색순위. 보조 근거")
+        TmapRankView tmapRank,
+
+        @Schema(description = "주요관광지점 입장객 통계. 보조 근거")
+        VisitorStatsView visitorStats
 ) {
 
     public static AttractionResponse of(AttractionSnapshot snapshot, String regionName) {
-        return of(snapshot, regionName, null);
+        return of(snapshot, regionName, null, null, null);
     }
 
     public static AttractionResponse of(AttractionSnapshot snapshot, String regionName, Integer centerRank) {
+        return of(snapshot, regionName, centerRank, null, null);
+    }
+
+    /**
+     * 신호는 각각 독립 필드로 담는다. 값이 없으면 상태로 알리고 0 이나 낮은 순위로 채우지 않는다.
+     */
+    public static AttractionResponse of(AttractionSnapshot snapshot, String regionName,
+                                        Integer centerRank, OnlineMentionView onlineMention,
+                                        TmapRankView tmapRank) {
         return new AttractionResponse(
                 snapshot.contentId(),
                 snapshot.name(),
@@ -67,7 +85,10 @@ public record AttractionResponse(
                 snapshot.lawdCode(),
                 regionName,
                 centerRank,
-                snapshot.baseAt()
+                snapshot.baseAt(),
+                onlineMention,
+                tmapRank == null ? TmapRankView.notAvailable() : tmapRank,
+                VisitorStatsView.notImported()
         );
     }
 }

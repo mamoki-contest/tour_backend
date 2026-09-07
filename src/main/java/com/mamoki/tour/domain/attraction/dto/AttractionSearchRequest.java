@@ -27,7 +27,10 @@ public record AttractionSearchRequest(
         @Min(value = 1, message = "조회 개수는 1 이상이어야 합니다.")
         @Schema(description = "조회 개수. 기본 20, 최대 100", example = "20")
         @Max(value = 100, message = "조회 개수는 100 이하여야 합니다.")
-        Integer size
+        Integer size,
+
+        @Schema(description = "정렬 기준. 비우면 공급자 순서를 그대로 사용합니다.")
+        AttractionSort sort
 ) {
 
     private static final int DEFAULT_PAGE = 1;
