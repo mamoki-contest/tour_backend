@@ -48,6 +48,19 @@ tour:
       base-ym: ${LOCGO_HUB_BASE_YM:}
       connect-timeout: 5s
       read-timeout: 30s
+    tats-cnctr-rate:
+      # 관광지별 조회일 기준 향후 30일 집중률 예측. 조회 단위가 시·군이라 시·군당 1회만 부른다.
+      base-url: ${TATS_CNCTR_RATE_BASE_URL:https://apis.data.go.kr/B551011/TatsCnctrRateService}
+      # KorService2·LocgoHub 와 같은 공공데이터포털 인증키를 공유한다.
+      service-key: ${KOR_SERVICE_KEY:}
+      mobile-app: tour
+      # 한 행이 (관광지 1곳 × 1일) 이라 목록형 API 보다 행 수가 훨씬 많다.
+      rows-per-page: ${TATS_CNCTR_RATE_ROWS:1000}
+      # 시·군당 최대 페이지 수. 호출이 무한히 늘어나지 않도록 두는 상한이다.
+      max-pages: ${TATS_CNCTR_RATE_MAX_PAGES:5}
+      connect-timeout: 5s
+      # 캐시가 비면 한 요청에서 시·군 수만큼 순차 호출한다. 목록 응답이 오래 잡히지 않도록 짧게 둔다.
+      read-timeout: 15s
     naver:
       # 검색 API 는 NAVER API HUB 로 이관되었다. 개발자센터 도메인·헤더로는 인증되지 않는다.
       base-url: ${NAVER_API_HUB_BASE_URL:https://naverapihub.apigw.ntruss.com}
