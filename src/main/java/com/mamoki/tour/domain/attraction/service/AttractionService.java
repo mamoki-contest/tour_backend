@@ -24,6 +24,8 @@ import com.mamoki.tour.domain.cache.dto.CachedResponse;
 import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
 import com.mamoki.tour.domain.region.entity.RegionCode;
 import com.mamoki.tour.domain.region.repository.RegionCodeRepository;
+import com.mamoki.tour.domain.visittiming.dto.VisitTiming;
+import com.mamoki.tour.domain.visittiming.service.VisitTimingService;
 import com.mamoki.tour.global.enums.ApiProvider;
 import com.mamoki.tour.global.enums.DataStatus;
 import com.mamoki.tour.global.exception.ExternalApiException;
@@ -65,18 +67,21 @@ public class AttractionService {
     private final RegionCodeRepository regionCodeRepository;
     private final CenterRankService centerRankService;
     private final SignalLookupService signalLookupService;
+    private final VisitTimingService visitTimingService;
     private final AttractionSortOrder sortOrder = new AttractionSortOrder();
 
     public AttractionService(KorServiceClient korServiceClient,
                              ExternalApiCacheService cacheService,
                              RegionCodeRepository regionCodeRepository,
                              CenterRankService centerRankService,
-                             SignalLookupService signalLookupService) {
+                             SignalLookupService signalLookupService,
+                             VisitTimingService visitTimingService) {
         this.korServiceClient = korServiceClient;
         this.cacheService = cacheService;
         this.regionCodeRepository = regionCodeRepository;
         this.centerRankService = centerRankService;
         this.signalLookupService = signalLookupService;
+        this.visitTimingService = visitTimingService;
     }
 
     public AttractionListResponse search(AttractionSearchRequest request) {
@@ -94,7 +99,7 @@ public class AttractionService {
             return AttractionListResponse.noData(page, size, KorServiceItemConverter.SOURCE, null);
         }
 
-        List<AttractionResponse> items = toResponses(fetched.snapshots(), request.sigunguCode());
+        List<AttractionResponse> items = toResponses(fetched.snapshots(), request);
 
         return new AttractionListResponse(items, fetched.totalCount(), page, size, null,
                 fetched.status(), fetched.collectedAt(), KorServiceItemConverter.SOURCE);
@@ -116,7 +121,7 @@ public class AttractionService {
             return AttractionListResponse.noData(page, size, KorServiceItemConverter.SOURCE, request.sort());
         }
 
-        List<AttractionResponse> all = toResponses(fetched.snapshots(), request.sigunguCode());
+        List<AttractionResponse> all = toResponses(fetched.snapshots(), request);
         List<AttractionResponse> ordered = sortOrder.order(all, request.sort());
         List<AttractionResponse> paged = pageOf(ordered, page, size);
 
@@ -131,12 +136,13 @@ public class AttractionService {
         return items.subList(from, to);
     }
 
-    private List<AttractionResponse> toResponses(List<AttractionSnapshot> snapshots, String sigunguCode) {
+    private List<AttractionResponse> toResponses(List<AttractionSnapshot> snapshots,
+                                                 AttractionSearchRequest request) {
         Map<String, RegionCode> regionsByLawdCode = regionCodeRepository
                 .findAllByAreaCode(GANGWON_AREA_CODE).stream()
                 .collect(Collectors.toMap(RegionCode::getLawdCode, Function.identity()));
 
-        Map<String, Integer> centerRanks = resolveCenterRanks(sigunguCode, snapshots);
+        Map<String, Integer> centerRanks = resolveCenterRanks(request.sigunguCode(), snapshots);
 
         List<String> contentIds = snapshots.stream().map(AttractionSnapshot::contentId).toList();
         Optional<Map<String, OnlineMentionView>> mentions =
@@ -145,13 +151,18 @@ public class AttractionService {
 
         String ruleVersion = signalLookupService.findMentionRuleVersion().orElse(null);
 
+        // 날짜 탐색은 선택 기능이다. 모드를 지정하지 않으면 예측을 조회하지 않는다.
+        Map<String, VisitTiming> visitTimings =
+                visitTimingService.resolve(snapshots, request.dateMode(), request.visitDate());
+
         return snapshots.stream()
                 .map(snapshot -> AttractionResponse.of(
                         snapshot,
                         regionName(regionsByLawdCode, snapshot),
                         centerRanks.get(snapshot.contentId()),
                         mentionView(mentions, snapshot.contentId(), ruleVersion),
-                        tmapRanks.getOrDefault(snapshot.contentId(), TmapRankView.notAvailable())))
+                        tmapRanks.getOrDefault(snapshot.contentId(), TmapRankView.notAvailable()),
+                        visitTimings.get(snapshot.contentId())))
                 .toList();
     }
 

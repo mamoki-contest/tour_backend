@@ -5,6 +5,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+import com.mamoki.tour.domain.visittiming.dto.VisitTiming;
+
 /**
  * 관광지 목록 항목의 표준 계약.
  *
@@ -13,6 +15,7 @@ import java.time.LocalDateTime;
  * @param regionName 지역코드 매핑에서 찾은 시·군 이름. 매핑이 없으면 null.
  * @param centerRank 시·군 내부 중심관광지 순위. 매칭되지 않으면 null이며, 순위 없음이 낮은 순위를 뜻하지 않는다.
  * @param baseAt     이 항목의 공급자 기준 시점.
+ * @param visitTiming 날짜 탐색 결과. 날짜 모드를 지정하지 않은 요청에서는 null.
  */
 @Schema(description = "관광지 목록 항목. 결측은 모두 null 이며 0 으로 해석하면 안 됩니다.")
 public record AttractionResponse(
@@ -57,23 +60,38 @@ public record AttractionResponse(
         TmapRankView tmapRank,
 
         @Schema(description = "주요관광지점 입장객 통계. 보조 근거")
-        VisitorStatsView visitorStats
+        VisitorStatsView visitorStats,
+
+        @Schema(description = """
+                날짜 탐색 결과. dateMode 를 지정하지 않은 요청에서는 null 입니다.
+                status 는 이 장소 자신의 30일 분포 안에서의 상대 수준이며,
+                다른 관광지의 status 와 비교해 혼잡도 순위로 쓰면 안 됩니다.""")
+        VisitTiming visitTiming
 ) {
 
     public static AttractionResponse of(AttractionSnapshot snapshot, String regionName) {
-        return of(snapshot, regionName, null, null, null);
+        return of(snapshot, regionName, null, null, null, null);
     }
 
     public static AttractionResponse of(AttractionSnapshot snapshot, String regionName, Integer centerRank) {
-        return of(snapshot, regionName, centerRank, null, null);
+        return of(snapshot, regionName, centerRank, null, null, null);
+    }
+
+    public static AttractionResponse of(AttractionSnapshot snapshot, String regionName,
+                                        Integer centerRank, OnlineMentionView onlineMention,
+                                        TmapRankView tmapRank) {
+        return of(snapshot, regionName, centerRank, onlineMention, tmapRank, null);
     }
 
     /**
      * 신호는 각각 독립 필드로 담는다. 값이 없으면 상태로 알리고 0 이나 낮은 순위로 채우지 않는다.
+     *
+     * <p>온라인 언급량·TMAP 순위·입장객 수·날짜 탐색은 서로 다른 데이터다. 하나의 점수로 합치지
+     * 않으며, 어느 하나의 결측을 다른 신호로 추정하지도 않는다.
      */
     public static AttractionResponse of(AttractionSnapshot snapshot, String regionName,
                                         Integer centerRank, OnlineMentionView onlineMention,
-                                        TmapRankView tmapRank) {
+                                        TmapRankView tmapRank, VisitTiming visitTiming) {
         return new AttractionResponse(
                 snapshot.contentId(),
                 snapshot.name(),
@@ -88,7 +106,8 @@ public record AttractionResponse(
                 snapshot.baseAt(),
                 onlineMention,
                 tmapRank == null ? TmapRankView.notAvailable() : tmapRank,
-                VisitorStatsView.notImported()
+                VisitorStatsView.notImported(),
+                visitTiming
         );
     }
 }

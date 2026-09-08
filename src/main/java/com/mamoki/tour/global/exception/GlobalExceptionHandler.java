@@ -28,6 +28,9 @@ import jakarta.validation.ConstraintViolationException;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    /** 스프링이 타입 변환 실패에 붙이는 오류 코드. */
+    private static final String TYPE_MISMATCH_CODE = "typeMismatch";
+
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(ServiceException.class)
@@ -92,7 +95,17 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(rsData.statusCode()).body(rsData);
     }
 
+    /**
+     * 타입 변환 실패는 스프링이 만든 메시지를 그대로 쓰지 않는다.
+     *
+     * <p>그 메시지에는 대상 타입의 전체 클래스명이 들어 있어 내부 패키지 구조가 그대로 나간다.
+     * 프론트가 사용자에게 보여줄 수 있는 문구도 아니다. 어느 필드가 잘못됐는지만 알리면 충분하다.
+     */
     private static FieldErrorDetail toDetail(FieldError fieldError) {
+        if (TYPE_MISMATCH_CODE.equals(fieldError.getCode())) {
+            return new FieldErrorDetail(fieldError.getField(), "형식이 올바르지 않습니다.");
+        }
+
         String msg = fieldError.getDefaultMessage();
         return new FieldErrorDetail(fieldError.getField(), msg == null ? "올바르지 않은 값입니다." : msg);
     }

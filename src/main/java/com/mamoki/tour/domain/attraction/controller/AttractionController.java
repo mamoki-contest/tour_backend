@@ -34,6 +34,9 @@ public class AttractionController {
      *
      * <p>데이터를 얻지 못해도 200 으로 응답하며, 그 사실은 dataStatus 로 알린다.
      * 공급자 장애는 오류가 아니라 정상 응답의 한 상태다.
+     *
+     * <p>dateMode 를 주면 항목마다 날짜 탐색 결과(visitTiming)를 함께 내려준다.
+     * 지원 범위 밖 날짜는 400 이 아니라 200 + OUT_OF_RANGE 로 안내한다.
      */
     @Operation(
             summary = "관광지 목록 조회",
@@ -48,12 +51,30 @@ public class AttractionController {
                     온라인 언급량이 산정되지 않았거나 이름이 모호한 장소는 정렬 대상에서 빠져
                     목록 뒤쪽에 모입니다. `온라인 언급 적은 순` 의 상단으로 올리지 않습니다.
 
-                    온라인 언급량, TMAP 검색순위, 입장객 수는 각각 독립 필드입니다.
+                    온라인 언급량, TMAP 검색순위, 입장객 수, 날짜 탐색은 각각 독립 필드입니다.
                     범위와 기준 시점이 달라 하나의 점수로 합치지 않습니다.
+
+                    ### 날짜 탐색
+                    `dateMode` 를 주면 항목마다 `visitTiming` 이 함께 내려옵니다. 비우면 목록만 반환합니다.
+
+                    - `FIXED` + `visitDate`: 그 날이 **그 장소 자신의 향후 30일 분포** 안에서
+                      한산(`LOW`)/보통(`NORMAL`)/혼잡(`HIGH`) 중 어디인지 반환합니다.
+                    - `FLEXIBLE`: 그 장소의 향후 30일 중 한산 예상일(`quietestDate`)을 반환합니다.
+                      `visitDate` 는 보내지 않습니다.
+
+                    `visitTiming.status` 는 장소 내부의 상대 수준입니다.
+                    **서로 다른 관광지의 status 를 모아 혼잡도 순위로 쓰지 마세요.**
+                    그래서 원본 예측값도, 예측값 기준 정렬 파라미터도 제공하지 않습니다.
+
+                    예측이 없거나 판정할 만큼 모이지 않으면 `NO_DATA`,
+                    지원 범위(`supportedFrom` ~ `supportedTo`) 밖 미래 날짜는 400 이 아니라
+                    200 + `OUT_OF_RANGE` 로 안내합니다. 과거 날짜는 400 입니다.
                     """)
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공. dataStatus 로 데이터 상태를 확인합니다."),
-            @ApiResponse(responseCode = "400", description = "조회 조건이 올바르지 않음. data 에 필드별 오류가 담깁니다.")
+            @ApiResponse(responseCode = "400", description = """
+                    조회 조건이 올바르지 않음. data 에 필드별 오류가 담깁니다.
+                    과거 날짜, FIXED 인데 visitDate 누락, FLEXIBLE 인데 visitDate 동봉이 여기에 해당합니다.""")
     })
     @GetMapping
     public RsData<AttractionListResponse> getAttractions(
