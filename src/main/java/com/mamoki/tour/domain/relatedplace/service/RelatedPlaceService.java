@@ -106,8 +106,12 @@ public class RelatedPlaceService {
 
         if (mine.isEmpty()) {
             // 공급자 응답은 받았지만 이 관광지가 연관 목록에 없다. 빈 목록이 아니라 그 사실을 알린다.
-            return new RelatedPlaces(
-                    RelatedPlacesView.noData(baseYm), RelatedPlacesView.noData(baseYm));
+            // dataStatus 는 받아 온 응답의 것을 그대로 쓴다. 여기서 NO_DATA 로 덮으면
+            // 공급자 데이터를 못 받았다고 거짓으로 알리게 된다.
+            RelatedPlacesView notListed = RelatedPlacesView.of(
+                    List.of(), false, region.dataStatus(), baseYm, region.collectedAt());
+
+            return new RelatedPlaces(notListed, notListed);
         }
 
         return new RelatedPlaces(

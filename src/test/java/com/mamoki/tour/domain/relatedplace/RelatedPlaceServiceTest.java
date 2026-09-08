@@ -217,6 +217,30 @@ class RelatedPlaceServiceTest {
     }
 
     @Test
+    @DisplayName("연관 목록에 없는 것과 공급자 데이터를 못 받은 것은 dataStatus 로 구분된다")
+    void separatesNotListedFromProviderFailure() {
+        // 응답은 정상으로 받았고 이 관광지만 목록에 없는 경우다. 데이터 신선도까지
+        // NO_DATA 로 덮으면 공급자 데이터를 못 받았다고 거짓으로 알리게 된다.
+        LocalDateTime collectedAt = LocalDateTime.of(2026, 9, 8, 3, 0);
+        given(cacheService.fetch(any(), anyString(), any(), any()))
+                .willReturn(CachedResponse.available(
+                        body(row("다른관광지", "정동진", "관광지", 1, GANGNEUNG)), collectedAt));
+
+        RelatedPlaces notListed = relatedPlaceService.resolve(attraction("경포해변", GANGNEUNG), TODAY);
+
+        assertThat(notListed.alternatives().dataStatus()).isEqualTo(DataStatus.AVAILABLE);
+        assertThat(notListed.alternatives().collectedAt()).isEqualTo(collectedAt);
+
+        given(cacheService.fetch(any(), anyString(), any(), any()))
+                .willReturn(CachedResponse.noData());
+
+        RelatedPlaces failed = relatedPlaceService.resolve(attraction("경포해변", GANGNEUNG), TODAY);
+
+        assertThat(failed.alternatives().dataStatus()).isEqualTo(DataStatus.NO_DATA);
+        assertThat(failed.alternatives().collectedAt()).isNull();
+    }
+
+    @Test
     @DisplayName("법정동 코드 형식이 어긋나면 호출하지 않고 정보 없음으로 남긴다")
     void skipsCallWhenLawdCodeBroken() {
         RelatedPlaces result = relatedPlaceService.resolve(attraction("경포해변", "51"), TODAY);
