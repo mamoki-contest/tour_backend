@@ -77,6 +77,27 @@ public class KorServiceClient {
                 areaBasedListParams(areaCode, sigunguCode, contentTypeId, pageNo, numOfRows));
     }
 
+    /**
+     * 관광지 상세 기본정보를 조회한다.
+     *
+     * <p>목록과 같은 항목 구조에 전화번호·홈페이지·개요가 더 붙는다. 목록에는 없는 정보라
+     * 상세를 열 때만 호출한다.
+     */
+    public String detailCommonJson(String contentId) {
+        return fetchJson("detailCommon2", detailCommonParams(contentId));
+    }
+
+    public String detailCommonKey(String contentId) {
+        return requestKey("detailCommon2", detailCommonParams(contentId));
+    }
+
+    private Map<String, String> detailCommonParams(String contentId) {
+        Map<String, String> params = commonParams();
+        params.put("contentId", contentId);
+
+        return params;
+    }
+
     private Map<String, String> areaBasedListParams(String areaCode, String sigunguCode,
                                                     String contentTypeId, int pageNo, int numOfRows) {
         Map<String, String> params = commonParams();

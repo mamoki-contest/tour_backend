@@ -92,7 +92,8 @@ class KorServiceContractTest {
     void keepsBrokenValuesNull() {
         KorServiceItem broken = new KorServiceItem(
                 "1", "12", "값 없는 장소", "", "", "", "",
-                "좌표아님", "", "32", "1", "", "", "", "시각아님");
+                "좌표아님", "", "32", "1", "", "", "", "시각아님",
+                "", "", "", "");
 
         AttractionSnapshot snapshot = KorServiceItemConverter.convert(broken);
 
@@ -107,7 +108,8 @@ class KorServiceContractTest {
     @DisplayName("표준 식별자나 이름이 없는 항목은 카탈로그에 넣지 않는다")
     void skipsUnusableItems() {
         KorServiceItem noName = new KorServiceItem(
-                "1", "12", "", "", "", "", "", "", "", "32", "1", "51", "150", "", "");
+                "1", "12", "", "", "", "", "", "", "", "32", "1", "51", "150", "", "",
+                "", "", "", "");
 
         assertThat(KorServiceItemConverter.convert(noName)).isNull();
         assertThat(KorServiceItemConverter.convertAll(List.of(noName))).isEmpty();
