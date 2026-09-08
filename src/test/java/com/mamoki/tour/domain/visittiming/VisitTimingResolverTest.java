@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 
 import com.mamoki.tour.domain.visittiming.dto.AttractionForecast;
 import com.mamoki.tour.domain.visittiming.dto.DailyConcentration;
+import com.mamoki.tour.domain.visittiming.dto.DailyVisitTiming;
 import com.mamoki.tour.domain.visittiming.dto.VisitTimingVerdict;
 import com.mamoki.tour.domain.visittiming.enums.VisitTimingStatus;
 import com.mamoki.tour.domain.visittiming.support.VisitTimingResolver;
@@ -204,6 +205,77 @@ class VisitTimingResolverTest {
 
         assertThat(crowdedDay.status()).isEqualTo(VisitTimingStatus.LOW);
         assertThat(quietDay.status()).isEqualTo(VisitTimingStatus.HIGH);
+    }
+
+    @Test
+    @DisplayName("상세용 일별 판정은 지원 범위 30일을 날짜 오름차순으로 채운다")
+    void resolvesEveryDayInSupportedWindow() {
+        List<DailyVisitTiming> daily = VisitTimingResolver.resolveDaily(ASCENDING, TODAY);
+
+        assertThat(daily).hasSize(30);
+        assertThat(daily.get(0).date()).isEqualTo(TODAY);
+        assertThat(daily.get(29).date()).isEqualTo(TODAY.plusDays(29));
+        assertThat(daily).extracting(DailyVisitTiming::date).isSorted();
+    }
+
+    @Test
+    @DisplayName("일별 판정은 확정 모드로 하루씩 물은 것과 같은 결과를 준다")
+    void dailyMatchesFixedModeDayByDay() {
+        // 상세가 목록과 다른 답을 내면 같은 장소·같은 날에 두 문구가 생긴다.
+        List<DailyVisitTiming> daily = VisitTimingResolver.resolveDaily(ASCENDING, TODAY);
+
+        for (DailyVisitTiming day : daily) {
+            assertThat(day.status())
+                    .isEqualTo(VisitTimingResolver.resolveFixed(ASCENDING, day.date(), TODAY).status());
+        }
+    }
+
+    @Test
+    @DisplayName("일별 판정에서 예측이 비어 있는 날은 이웃 값으로 메우지 않는다")
+    void leavesMissingDayAsNoData() {
+        List<DailyConcentration> days = new ArrayList<>();
+
+        for (int i = 0; i < 30; i++) {
+            // 5일째만 값이 없다. 앞뒤가 있어도 그 날을 만들어 내지 않는다.
+            days.add(new DailyConcentration(TODAY.plusDays(i),
+                    i == 5 ? null : BigDecimal.valueOf(i + 1L)));
+        }
+
+        List<DailyVisitTiming> daily = VisitTimingResolver.resolveDaily(forecastOf(days), TODAY);
+
+        assertThat(daily.get(5).status()).isEqualTo(VisitTimingStatus.NO_DATA);
+        assertThat(daily.get(4).status()).isNotEqualTo(VisitTimingStatus.NO_DATA);
+    }
+
+    @Test
+    @DisplayName("유효 예측일이 10일 미만이면 30일 전체를 판정하지 않는다")
+    void marksEveryDayNoDataWhenTooFewForecasts() {
+        List<DailyVisitTiming> daily = VisitTimingResolver.resolveDaily(forecast(9), TODAY);
+
+        assertThat(daily).hasSize(30);
+        assertThat(daily).extracting(DailyVisitTiming::status)
+                .containsOnly(VisitTimingStatus.NO_DATA);
+    }
+
+    @Test
+    @DisplayName("예측이 아예 없어도 30일 자리를 만들고 모두 정보 없음으로 남긴다")
+    void keepsWindowWhenForecastAbsent() {
+        List<DailyVisitTiming> daily = VisitTimingResolver.resolveDaily(null, TODAY);
+
+        assertThat(daily).hasSize(30);
+        assertThat(daily).extracting(DailyVisitTiming::status)
+                .containsOnly(VisitTimingStatus.NO_DATA);
+    }
+
+    @Test
+    @DisplayName("일별 판정 계약에 집중률 원본값이 들어가지 않는다")
+    void dailyNeverExposesRawRate() {
+        // 30일을 한 번에 내려주므로 값이 있으면 장소 사이의 절대 비교가 더 쉬워진다.
+        List<String> components = java.util.Arrays.stream(DailyVisitTiming.class.getRecordComponents())
+                .map(java.lang.reflect.RecordComponent::getName)
+                .toList();
+
+        assertThat(components).containsExactly("date", "status");
     }
 
     private VisitTimingStatus fixedStatus(int dayOffset) {
