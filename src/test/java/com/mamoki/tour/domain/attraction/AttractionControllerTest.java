@@ -1,6 +1,7 @@
 package com.mamoki.tour.domain.attraction;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -20,29 +21,40 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.filter.CharacterEncodingFilter;
 
 import com.mamoki.tour.domain.attraction.controller.AttractionController;
+import com.mamoki.tour.domain.attraction.dto.AttractionDetailResponse;
 import com.mamoki.tour.domain.attraction.dto.AttractionListResponse;
 import com.mamoki.tour.domain.attraction.dto.AttractionResponse;
+import com.mamoki.tour.domain.attraction.service.AttractionDetailService;
 import com.mamoki.tour.domain.attraction.service.AttractionService;
 import com.mamoki.tour.domain.attraction.dto.OnlineMentionView;
 import com.mamoki.tour.domain.attraction.dto.TmapRankView;
 import com.mamoki.tour.domain.attraction.dto.VisitorStatsView;
+import com.mamoki.tour.domain.relatedplace.dto.RelatedPlace;
+import com.mamoki.tour.domain.relatedplace.dto.RelatedPlacesView;
+import com.mamoki.tour.domain.relatedplace.enums.RelatedPlaceKind;
+import com.mamoki.tour.domain.visittiming.dto.DailyVisitTiming;
 import com.mamoki.tour.domain.visittiming.dto.VisitTiming;
 import com.mamoki.tour.domain.visittiming.enums.DateMode;
 import com.mamoki.tour.domain.visittiming.enums.VisitTimingStatus;
 import com.mamoki.tour.global.enums.DataStatus;
 import com.mamoki.tour.global.enums.MentionStatus;
 import com.mamoki.tour.global.exception.GlobalExceptionHandler;
+import com.mamoki.tour.global.exception.ServiceException;
+import com.mamoki.tour.global.rsdata.ResultCodes;
 
 class AttractionControllerTest {
 
     private MockMvc mvc;
     private AttractionService attractionService;
+    private AttractionDetailService attractionDetailService;
 
     @BeforeEach
     void setUp() {
         attractionService = Mockito.mock(AttractionService.class);
+        attractionDetailService = Mockito.mock(AttractionDetailService.class);
 
-        mvc = MockMvcBuilders.standaloneSetup(new AttractionController(attractionService))
+        mvc = MockMvcBuilders.standaloneSetup(
+                        new AttractionController(attractionService, attractionDetailService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .addFilters(new CharacterEncodingFilter("UTF-8", true))
                 .build();
@@ -231,6 +243,116 @@ class AttractionControllerTest {
                 .andExpect(jsonPath("$.data[0].msg").value("형식이 올바르지 않습니다."))
                 .andExpect(jsonPath("$.data[0].msg").value(org.hamcrest.Matchers.not(
                         org.hamcrest.Matchers.containsString("com.mamoki"))));
+    }
+
+    @Test
+    @DisplayName("상세 응답에 기본정보·30일 예측·대체지 후보·함께 가기 좋은 곳이 각각 담긴다")
+    void serializesDetailSections() throws Exception {
+        given(attractionDetailService.getDetail(anyString())).willReturn(detail());
+
+        mvc.perform(get("/api/v1/attractions/126508"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.resultCode").value("200-1"))
+                .andExpect(jsonPath("$.data.contentId").value("126508"))
+                .andExpect(jsonPath("$.data.overview").value("경포해변은 강릉을 대표하는 해수욕장이다."))
+                .andExpect(jsonPath("$.data.visitTiming.quietestDate").value("2026-09-11"))
+                .andExpect(jsonPath("$.data.dailyForecast.length()").value(2))
+                .andExpect(jsonPath("$.data.dailyForecast[0].date").value("2026-09-08"))
+                .andExpect(jsonPath("$.data.dailyForecast[0].status").value("LOW"))
+                .andExpect(jsonPath("$.data.alternatives.items.length()").value(1))
+                .andExpect(jsonPath("$.data.companions.items.length()").value(1));
+    }
+
+    @Test
+    @DisplayName("대체지 후보와 함께 가기 좋은 곳이 유형과 자격으로 구분되어 내려간다")
+    void serializesKindAndEligibility() throws Exception {
+        given(attractionDetailService.getDetail(anyString())).willReturn(detail());
+
+        mvc.perform(get("/api/v1/attractions/126508"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.alternatives.items[0].name").value("정동진"))
+                .andExpect(jsonPath("$.data.alternatives.items[0].kind").value("ATTRACTION"))
+                .andExpect(jsonPath("$.data.alternatives.items[0].eligibleAsAlternative").value(true))
+                .andExpect(jsonPath("$.data.alternatives.items[0].visitTiming.status").value("LOW"))
+                .andExpect(jsonPath("$.data.companions.items[0].name").value("초당순두부"))
+                .andExpect(jsonPath("$.data.companions.items[0].kind").value("RESTAURANT"))
+                .andExpect(jsonPath("$.data.companions.items[0].eligibleAsAlternative").value(false))
+                .andExpect(jsonPath("$.data.companions.items[0].visitTiming").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("빈 묶음은 이유를 상태로 알린다")
+    void serializesEmptyReason() throws Exception {
+        given(attractionDetailService.getDetail(anyString())).willReturn(
+                detailWith(RelatedPlacesView.of(List.of(), true, DataStatus.AVAILABLE,
+                                "202607", LocalDateTime.of(2026, 9, 8, 3, 0)),
+                        RelatedPlacesView.noData("202607")));
+
+        mvc.perform(get("/api/v1/attractions/126508"))
+                .andExpect(status().isOk())
+                // 연관은 받았지만 자격 충족 0 인 경우와, 데이터를 못 받은 경우를 구분한다.
+                .andExpect(jsonPath("$.data.alternatives.status").value("NONE_QUALIFIED"))
+                .andExpect(jsonPath("$.data.companions.status").value("NO_RELATED_DATA"));
+    }
+
+    @Test
+    @DisplayName("상세 응답에도 집중률 원본값이 담기지 않는다")
+    void detailNeverExposesRawRate() throws Exception {
+        given(attractionDetailService.getDetail(anyString())).willReturn(detail());
+
+        mvc.perform(get("/api/v1/attractions/126508"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.visitTiming.rate").doesNotExist())
+                .andExpect(jsonPath("$.data.dailyForecast[0].rate").doesNotExist())
+                .andExpect(jsonPath("$.data.alternatives.items[0].visitTiming.rate").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("기본정보를 얻지 못하면 404 로 응답한다")
+    void returnsNotFoundWhenBasicInfoMissing() throws Exception {
+        given(attractionDetailService.getDetail(anyString()))
+                .willThrow(new ServiceException(ResultCodes.NOT_FOUND, "관광지 정보를 찾을 수 없습니다."));
+
+        mvc.perform(get("/api/v1/attractions/999"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.resultCode").value("404-1"))
+                .andExpect(jsonPath("$.msg").value("관광지 정보를 찾을 수 없습니다."));
+    }
+
+    private static AttractionDetailResponse detail() {
+        RelatedPlacesView alternatives = RelatedPlacesView.of(
+                List.of(new RelatedPlace("정동진", RelatedPlaceKind.ATTRACTION, "관광지",
+                        "자연관광", "해수욕장", "51150", "강릉시", 1, true, timing())),
+                true, DataStatus.AVAILABLE, "202607", LocalDateTime.of(2026, 9, 8, 3, 0));
+
+        RelatedPlacesView companions = RelatedPlacesView.of(
+                List.of(new RelatedPlace("초당순두부", RelatedPlaceKind.RESTAURANT, "음식",
+                        "음식", "한식", "51150", "강릉시", 2, false, null)),
+                true, DataStatus.AVAILABLE, "202607", LocalDateTime.of(2026, 9, 8, 3, 0));
+
+        return detailWith(alternatives, companions);
+    }
+
+    private static AttractionDetailResponse detailWith(RelatedPlacesView alternatives,
+                                                       RelatedPlacesView companions) {
+
+        return new AttractionDetailResponse(
+                "126508", "경포해변", null, "강원특별자치도 강릉시 창해로 514", "25460",
+                "033-640-4901", "https://www.gn.go.kr", "경포해변은 강릉을 대표하는 해수욕장이다.",
+                new BigDecimal("37.8049458"), new BigDecimal("128.9017861"), "12",
+                "51150", "강릉시", LocalDateTime.of(2026, 5, 20, 9, 12, 52),
+                DataStatus.AVAILABLE, LocalDateTime.of(2026, 9, 8, 3, 0), "KorService2",
+                timing(),
+                List.of(new DailyVisitTiming(LocalDate.of(2026, 9, 8), VisitTimingStatus.LOW),
+                        new DailyVisitTiming(LocalDate.of(2026, 9, 9), VisitTimingStatus.HIGH)),
+                alternatives, companions);
+    }
+
+    private static VisitTiming timing() {
+        return new VisitTiming(DateMode.FLEXIBLE, VisitTimingStatus.LOW, null,
+                LocalDate.of(2026, 9, 11), 30, LocalDate.of(2026, 9, 8),
+                LocalDate.of(2026, 10, 7), DataStatus.AVAILABLE,
+                LocalDateTime.of(2026, 9, 8, 3, 0), "TatsCnctrRateService");
     }
 
     /** 날짜 탐색 결과만 바꿔 가며 쓰는 한 건짜리 목록 응답. */

@@ -20,6 +20,7 @@ import com.mamoki.tour.domain.cache.dto.CachedResponse;
 import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
 import com.mamoki.tour.domain.visittiming.dto.AttractionForecast;
 import com.mamoki.tour.domain.visittiming.dto.VisitTiming;
+import com.mamoki.tour.domain.visittiming.dto.VisitTimingDetail;
 import com.mamoki.tour.domain.visittiming.dto.VisitTimingVerdict;
 import com.mamoki.tour.domain.visittiming.enums.DateMode;
 import com.mamoki.tour.domain.visittiming.support.VisitTimingResolver;
@@ -108,6 +109,31 @@ public class VisitTimingService {
         }
 
         return result;
+    }
+
+    /**
+     * 관광지 상세용. 한 장소의 유연 모드 판정과 30일 일별 판정을 함께 돌려준다.
+     *
+     * <p>목록과 같은 캐시·같은 매칭·같은 경계를 쓰므로 상세의 그 날 판정이 목록의 확정 모드
+     * 판정과 어긋나지 않는다.
+     */
+    public VisitTimingDetail resolveDetail(AttractionSnapshot attraction, LocalDate today) {
+        LocalDate supportedFrom = VisitTimingResolver.supportedFrom(today);
+        LocalDate supportedTo = VisitTimingResolver.supportedTo(today);
+
+        RegionForecast region = isLawdCode(attraction.lawdCode())
+                ? fetchRegionForecast(attraction.lawdCode())
+                : RegionForecast.empty();
+
+        AttractionForecast forecast = region.match(attraction);
+
+        VisitTiming summary = VisitTiming.of(
+                DateMode.FLEXIBLE,
+                VisitTimingResolver.resolveFlexible(forecast, today),
+                supportedFrom, supportedTo,
+                region.dataStatus(), region.collectedAt(), TatsCnctrRateItemConverter.SOURCE);
+
+        return new VisitTimingDetail(summary, VisitTimingResolver.resolveDaily(forecast, today));
     }
 
     /**

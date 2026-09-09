@@ -2,11 +2,13 @@ package com.mamoki.tour.domain.visittiming.support;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
 import com.mamoki.tour.domain.visittiming.dto.AttractionForecast;
 import com.mamoki.tour.domain.visittiming.dto.DailyConcentration;
+import com.mamoki.tour.domain.visittiming.dto.DailyVisitTiming;
 import com.mamoki.tour.domain.visittiming.dto.VisitTimingVerdict;
 import com.mamoki.tour.domain.visittiming.enums.VisitTimingStatus;
 
@@ -108,6 +110,35 @@ public final class VisitTimingResolver {
 
         return new VisitTimingVerdict(
                 VisitTimingStatus.LOW, null, quietest.date(), valid.size());
+    }
+
+    /**
+     * 상세 화면용. 지원 범위 30일을 하루씩 모두 판정한다.
+     *
+     * <p>확정 모드를 30번 부른 것과 같은 결과가 나오도록 같은 분포·같은 경계를 쓴다. 날짜마다
+     * 따로 계산하면 분포가 달라져 목록 응답과 어긋날 수 있다.
+     *
+     * <p>예측이 없는 날은 이웃 값으로 메우지 않고 {@code NO_DATA} 로 남긴다. 유효 예측일이
+     * 판정 최소치에 못 미치면 30일 전체가 {@code NO_DATA} 다.
+     *
+     * @return 날짜 오름차순 30일. 지원 범위 밖은 담지 않는다.
+     */
+    public static List<DailyVisitTiming> resolveDaily(AttractionForecast forecast, LocalDate today) {
+        List<DailyConcentration> valid = validDays(forecast, today);
+        boolean judgeable = valid.size() >= MIN_FORECAST_DAYS_FOR_LEVEL;
+        List<BigDecimal> sorted = judgeable ? sortedRates(valid) : List.of();
+
+        List<DailyVisitTiming> daily = new ArrayList<>(FORECAST_WINDOW_DAYS);
+
+        for (int offset = 0; offset < FORECAST_WINDOW_DAYS; offset++) {
+            LocalDate date = today.plusDays(offset);
+            BigDecimal rate = judgeable ? rateOf(valid, date) : null;
+
+            daily.add(new DailyVisitTiming(date,
+                    rate == null ? VisitTimingStatus.NO_DATA : classify(rate, sorted)));
+        }
+
+        return List.copyOf(daily);
     }
 
     /**

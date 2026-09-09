@@ -6,6 +6,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Objects;
 
+import com.mamoki.tour.domain.attraction.dto.AttractionDetailSnapshot;
 import com.mamoki.tour.domain.attraction.dto.AttractionSnapshot;
 import com.mamoki.tour.infra.korservice.dto.KorServiceItem;
 
@@ -55,6 +56,26 @@ public final class KorServiceItemConverter {
                 toBaseAt(item.modifiedtime()),
                 SOURCE
         );
+    }
+
+    /**
+     * 상세 응답 항목을 표준 계약으로 변환한다.
+     *
+     * @return 표준 식별자나 이름이 없어 상세를 구성할 수 없는 항목이면 null
+     */
+    public static AttractionDetailSnapshot convertDetail(KorServiceItem item) {
+        AttractionSnapshot basic = convert(item);
+
+        if (basic == null) {
+            return null;
+        }
+
+        return new AttractionDetailSnapshot(
+                basic,
+                blankToNull(item.zipcode()),
+                blankToNull(item.tel()),
+                blankToNull(item.homepage()),
+                blankToNull(item.overview()));
     }
 
     private static String blankToNull(String value) {
