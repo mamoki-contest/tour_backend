@@ -1,14 +1,18 @@
 package com.mamoki.tour.domain.attraction.dto;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 import org.springframework.format.annotation.DateTimeFormat;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.mamoki.tour.domain.attraction.support.MapBounds;
 import com.mamoki.tour.domain.visittiming.enums.DateMode;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -23,6 +27,7 @@ import jakarta.validation.constraints.Pattern;
  * @param contentTypeId 관광지 분류. 비우면 전체(음식점·숙박 포함).
  * @param dateMode      FIXED(날짜 확정) / FLEXIBLE(날짜 유연). 비우면 날짜 탐색을 하지 않는다.
  * @param visitDate     확정 모드의 선택일. 확정 모드에서만 받는다.
+ * @param minLatitude   지도 경계 남쪽 끝. 네 값을 모두 주거나 모두 비운다.
  */
 @Schema(description = "관광지 목록 조회 조건")
 public record AttractionSearchRequest(
@@ -55,7 +60,27 @@ public record AttractionSearchRequest(
                 example = "2026-09-20")
         @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
         @FutureOrPresent(message = "선택일은 오늘 이후여야 합니다.")
-        LocalDate visitDate
+        LocalDate visitDate,
+
+        @Schema(description = "지도 경계 남쪽 끝 위도. 네 값을 함께 보냅니다.", example = "37.6")
+        @DecimalMin(value = "-90", message = "위도는 -90 이상이어야 합니다.")
+        @DecimalMax(value = "90", message = "위도는 90 이하여야 합니다.")
+        BigDecimal minLatitude,
+
+        @Schema(description = "지도 경계 북쪽 끝 위도", example = "37.9")
+        @DecimalMin(value = "-90", message = "위도는 -90 이상이어야 합니다.")
+        @DecimalMax(value = "90", message = "위도는 90 이하여야 합니다.")
+        BigDecimal maxLatitude,
+
+        @Schema(description = "지도 경계 서쪽 끝 경도", example = "128.7")
+        @DecimalMin(value = "-180", message = "경도는 -180 이상이어야 합니다.")
+        @DecimalMax(value = "180", message = "경도는 180 이하여야 합니다.")
+        BigDecimal minLongitude,
+
+        @Schema(description = "지도 경계 동쪽 끝 경도", example = "129.0")
+        @DecimalMin(value = "-180", message = "경도는 -180 이상이어야 합니다.")
+        @DecimalMax(value = "180", message = "경도는 180 이하여야 합니다.")
+        BigDecimal maxLongitude
 ) {
 
     private static final int DEFAULT_PAGE = 1;
@@ -88,5 +113,48 @@ public record AttractionSearchRequest(
     @AssertTrue(message = "유연 모드에서는 선택일(visitDate)을 보내지 않습니다.")
     public boolean isVisitDateAbsentWhenFlexible() {
         return dateMode != DateMode.FLEXIBLE || visitDate == null;
+    }
+
+    /** 경계는 네 값이 모두 있어야 사각형이 된다. 일부만 받고 나머지를 임의로 채우지 않는다. */
+    @JsonIgnore
+    @Schema(hidden = true)
+    @AssertTrue(message = "지도 경계는 네 값(minLatitude, maxLatitude, minLongitude, maxLongitude)을 모두 보내야 합니다.")
+    public boolean isBoundsCompleteOrAbsent() {
+        int provided = 0;
+        for (BigDecimal value : new BigDecimal[]{minLatitude, maxLatitude, minLongitude, maxLongitude}) {
+            if (value != null) {
+                provided++;
+            }
+        }
+
+        return provided == 0 || provided == 4;
+    }
+
+    @JsonIgnore
+    @Schema(hidden = true)
+    @AssertTrue(message = "지도 경계의 최솟값은 최댓값보다 클 수 없습니다.")
+    public boolean isBoundsOrdered() {
+        if (!hasBounds()) {
+            return true;
+        }
+
+        return minLatitude.compareTo(maxLatitude) <= 0
+                && minLongitude.compareTo(maxLongitude) <= 0;
+    }
+
+    @JsonIgnore
+    @Schema(hidden = true)
+    public boolean hasBounds() {
+        return minLatitude != null && maxLatitude != null
+                && minLongitude != null && maxLongitude != null;
+    }
+
+    /** 경계를 주지 않았으면 null. 전체 범위를 뜻하는 경계를 만들어내지 않는다. */
+    @JsonIgnore
+    @Schema(hidden = true)
+    public MapBounds bounds() {
+        return hasBounds()
+                ? new MapBounds(minLatitude, maxLatitude, minLongitude, maxLongitude)
+                : null;
     }
 }

@@ -20,6 +20,7 @@ import com.mamoki.tour.domain.attraction.dto.AttractionSort;
 import com.mamoki.tour.domain.attraction.dto.OnlineMentionView;
 import com.mamoki.tour.domain.attraction.dto.TmapRankView;
 import com.mamoki.tour.domain.attraction.support.AttractionSortOrder;
+import com.mamoki.tour.domain.attraction.support.MapBounds;
 import com.mamoki.tour.domain.cache.dto.CachedResponse;
 import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
 import com.mamoki.tour.domain.region.entity.RegionCode;
@@ -84,8 +85,16 @@ public class AttractionService {
         this.visitTimingService = visitTimingService;
     }
 
+    /**
+     * 정렬도 경계도 없으면 공급자 페이지를 그대로 쓰고, 둘 중 하나라도 있으면 범위 전체를 모은다.
+     *
+     * <p>경계 필터는 공급자가 제공하지 않아 우리가 걸러야 한다. 공급자가 나눠 준 한 페이지만
+     * 걸러내면 경계 안에 있는데도 뒤 페이지에 있다는 이유로 빠지는 장소가 생긴다.
+     */
     public AttractionListResponse search(AttractionSearchRequest request) {
-        return request.sort() == null ? searchByProviderOrder(request) : searchSorted(request);
+        return request.sort() == null && !request.hasBounds()
+                ? searchByProviderOrder(request)
+                : searchWholeRange(request);
     }
 
     /** 정렬을 요청하지 않으면 공급자 페이지를 그대로 쓴다. */
@@ -106,12 +115,12 @@ public class AttractionService {
     }
 
     /**
-     * 조회 범위 전체를 모아 정렬한 뒤 페이지를 나눈다.
+     * 조회 범위 전체를 모아 경계로 거르고 정렬한 뒤 페이지를 나눈다.
      *
      * <p>활성 언급량 스냅샷이 없으면 정렬 기준 자체가 없다. 그때는 순서를 만들어내지 않고
      * 공급자 순서를 그대로 쓰며, 각 항목의 상태로 그 사실을 알린다.
      */
-    private AttractionListResponse searchSorted(AttractionSearchRequest request) {
+    private AttractionListResponse searchWholeRange(AttractionSearchRequest request) {
         int page = request.pageOrDefault();
         int size = request.sizeOrDefault();
 
@@ -121,12 +130,32 @@ public class AttractionService {
             return AttractionListResponse.noData(page, size, KorServiceItemConverter.SOURCE, request.sort());
         }
 
-        List<AttractionResponse> all = toResponses(fetched.snapshots(), request);
-        List<AttractionResponse> ordered = sortOrder.order(all, request.sort());
+        // 신호 조회와 정렬 전에 거른다. 경계 밖 장소의 언급량까지 찾을 이유가 없다.
+        List<AttractionSnapshot> withinBounds = filterByBounds(fetched.snapshots(), request.bounds());
+
+        List<AttractionResponse> all = toResponses(withinBounds, request);
+
+        // 경계만 준 요청은 정렬 기준이 없다. 공급자 순서를 그대로 두고 거르기만 한다.
+        List<AttractionResponse> ordered = request.sort() == null
+                ? all
+                : sortOrder.order(all, request.sort());
+
         List<AttractionResponse> paged = pageOf(ordered, page, size);
 
         return new AttractionListResponse(paged, ordered.size(), page, size, request.sort(),
                 fetched.status(), fetched.collectedAt(), KorServiceItemConverter.SOURCE);
+    }
+
+    /** 좌표가 없는 장소는 경계 안이라고 단정할 수 없어 뺀다. 경계를 주지 않았으면 그대로 둔다. */
+    private static List<AttractionSnapshot> filterByBounds(List<AttractionSnapshot> snapshots,
+                                                          MapBounds bounds) {
+        if (bounds == null) {
+            return snapshots;
+        }
+
+        return snapshots.stream()
+                .filter(snapshot -> bounds.contains(snapshot.latitude(), snapshot.longitude()))
+                .toList();
     }
 
     private static List<AttractionResponse> pageOf(List<AttractionResponse> items, int page, int size) {
