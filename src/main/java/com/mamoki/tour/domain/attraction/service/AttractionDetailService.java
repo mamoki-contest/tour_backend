@@ -67,18 +67,14 @@ public class AttractionDetailService {
      * @throws ServiceException 기본정보를 얻지 못한 경우 404
      */
     public AttractionDetailResponse getDetail(String contentId, LocalDate today) {
-        CachedResponse cached = fetchDetail(contentId);
+        BasicLookup lookup = findBasic(contentId);
 
-        if (!cached.hasBody()) {
+        if (lookup.detail() == null) {
             throw new ServiceException(ResultCodes.NOT_FOUND, "관광지 정보를 찾을 수 없습니다.");
         }
 
-        AttractionDetailSnapshot detail = parse(cached.body());
-
-        if (detail == null) {
-            throw new ServiceException(ResultCodes.NOT_FOUND, "관광지 정보를 찾을 수 없습니다.");
-        }
-
+        AttractionDetailSnapshot detail = lookup.detail();
+        CachedResponse cached = lookup.cached();
         AttractionSnapshot basic = detail.basic();
         VisitTimingDetail timing = visitTimingService.resolveDetail(basic, today);
         RelatedPlaces related = relatedPlaceService.resolve(basic, today);
@@ -105,6 +101,34 @@ public class AttractionDetailService {
                 timing.daily(),
                 related.alternatives(),
                 related.companions());
+    }
+
+    /**
+     * 기본정보 한 건을 조회한다.
+     *
+     * <p>컬렉션 일괄 재조회(#9)도 같은 경로를 쓴다. 여기서는 없는 항목을 404 로 만들지 않고
+     * 결과에 그대로 담아, 호출부가 "없어진 것"과 "지금 확인할 수 없는 것"을 가려낼 수 있게 한다.
+     */
+    public BasicLookup findBasic(String contentId) {
+        CachedResponse cached = fetchDetail(contentId);
+
+        if (!cached.hasBody()) {
+            return new BasicLookup(null, cached);
+        }
+
+        return new BasicLookup(parse(cached.body()), cached);
+    }
+
+    /**
+     * @param detail 공급자에 항목이 없거나 해석하지 못하면 null
+     * @param cached 캐시 계층의 응답 상태. NO_DATA 면 공급자를 부르지 못한 것이다.
+     */
+    public record BasicLookup(AttractionDetailSnapshot detail, CachedResponse cached) {
+
+        /** 공급자에게 물어보지도 못한 상태. 항목이 없어졌다는 뜻이 아니다. */
+        public boolean isUnreachable() {
+            return !cached.hasBody();
+        }
     }
 
     private CachedResponse fetchDetail(String contentId) {

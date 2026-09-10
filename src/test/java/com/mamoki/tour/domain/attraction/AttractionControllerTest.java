@@ -37,6 +37,7 @@ import com.mamoki.tour.domain.visittiming.dto.VisitTiming;
 import com.mamoki.tour.domain.visittiming.enums.DateMode;
 import com.mamoki.tour.domain.visittiming.enums.VisitTimingStatus;
 import com.mamoki.tour.global.enums.DataStatus;
+import com.mamoki.tour.domain.collection.service.CollectionLookupService;
 import com.mamoki.tour.domain.search.service.AttractionSearchService;
 import com.mamoki.tour.global.enums.MentionStatus;
 import com.mamoki.tour.global.exception.GlobalExceptionHandler;
@@ -49,16 +50,18 @@ class AttractionControllerTest {
     private AttractionService attractionService;
     private AttractionDetailService attractionDetailService;
     private AttractionSearchService attractionSearchService;
+    private CollectionLookupService collectionLookupService;
 
     @BeforeEach
     void setUp() {
         attractionService = Mockito.mock(AttractionService.class);
         attractionDetailService = Mockito.mock(AttractionDetailService.class);
         attractionSearchService = Mockito.mock(AttractionSearchService.class);
+        collectionLookupService = Mockito.mock(CollectionLookupService.class);
 
         mvc = MockMvcBuilders.standaloneSetup(
                         new AttractionController(attractionService, attractionDetailService,
-                                attractionSearchService))
+                                attractionSearchService, collectionLookupService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .addFilters(new CharacterEncodingFilter("UTF-8", true))
                 .build();
