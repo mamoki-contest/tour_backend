@@ -4,6 +4,7 @@ import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -12,6 +13,8 @@ import com.mamoki.tour.domain.attraction.dto.AttractionListResponse;
 import com.mamoki.tour.domain.attraction.dto.AttractionSearchRequest;
 import com.mamoki.tour.domain.attraction.service.AttractionDetailService;
 import com.mamoki.tour.domain.attraction.service.AttractionService;
+import com.mamoki.tour.domain.search.dto.AttractionSearchResponse;
+import com.mamoki.tour.domain.search.service.AttractionSearchService;
 import com.mamoki.tour.global.rsdata.ResultCodes;
 import com.mamoki.tour.global.rsdata.RsData;
 
@@ -29,11 +32,14 @@ public class AttractionController {
 
     private final AttractionService attractionService;
     private final AttractionDetailService attractionDetailService;
+    private final AttractionSearchService attractionSearchService;
 
     public AttractionController(AttractionService attractionService,
-                                AttractionDetailService attractionDetailService) {
+                                AttractionDetailService attractionDetailService,
+                                AttractionSearchService attractionSearchService) {
         this.attractionService = attractionService;
         this.attractionDetailService = attractionDetailService;
+        this.attractionSearchService = attractionSearchService;
     }
 
     /**
@@ -88,6 +94,63 @@ public class AttractionController {
             @Valid @ParameterObject @ModelAttribute AttractionSearchRequest request) {
 
         return RsData.of(ResultCodes.OK, "관광지 목록을 조회했습니다.", attractionService.search(request));
+    }
+
+    /**
+     * 지원 테마 또는 자유 검색어로 관광지를 찾는다.
+     *
+     * <p>결과가 0건인 것과 공급자에게서 답을 얻지 못한 것을 구분해 응답한다.
+     */
+    @Operation(
+            summary = "테마·검색어 조회",
+            description = """
+                    지원 테마 선택과 자유 검색어를 같은 입구로 받아, 검증된 테마 추천 결과와
+                    일반 검색 결과를 구분해 반환합니다.
+
+                    ### 결과 유형 (`resultType`)
+                    - `SUPPORTED_THEME`: 8개 지원 테마(벚꽃·꽃축제·해수욕장·계곡·단풍·억새·눈꽃·해돋이)로
+                      이어진 검색입니다. **추천 자격을 적용한 결과**이며, 장소 이름이 테마와 실제로
+                      맞는 곳만 담깁니다
+                    - `GENERAL_SEARCH`: 공급자 키워드 검색 결과 그대로입니다. **테마 추천 보증이 없습니다**
+
+                    두 유형을 같은 문구로 표시하지 마세요. 신뢰 수준이 다릅니다.
+
+                    ### 검색어 정규화
+                    동의어와 한 글자 차이의 오타까지 지원 테마로 잇습니다. `바닷가`·`비치`는 해수욕장으로,
+                    `벗꽃`은 벚꽃으로 이어집니다. 두 글자 이상 다르면 다른 말로 보고 일반 검색으로 넘깁니다.
+                    실제로 공급자에게 보낸 검색어는 `appliedQuery` 로 확인할 수 있습니다.
+
+                    ### 결과가 없을 때
+                    억지 후보를 만들지 않습니다. 빈 목록을 그대로 두고, 가까운 지원 테마가 있으면
+                    `suggestedThemes` 로 제안합니다. 제안은 검색 결과를 대신하는 값이 아닙니다.
+
+                    강원 기준으로 벚꽃·억새·해돋이·꽃축제는 공급자에 등록된 장소가 없어 현재 0건입니다.
+                    계절 현상이라 관광지 이름으로 등록되어 있지 않습니다.
+
+                    ### 0건과 정보 없음
+                    `dataStatus` 가 `AVAILABLE` 인데 `items` 가 비었으면 조건에 맞는 장소가 없다는
+                    뜻이고, `NO_DATA` 이면 공급자에게서 답을 얻지 못했다는 뜻입니다. 두 경우를
+                    같은 문구로 표시하지 마세요.
+                    """)
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공. resultType 과 dataStatus 를 함께 확인합니다.")
+    })
+    @GetMapping("/search")
+    public RsData<AttractionSearchResponse> searchAttractions(
+            @Parameter(description = "지원 테마 또는 자유 검색어", example = "해수욕장")
+            @RequestParam String query,
+
+            @Parameter(description = "관광공사 시·군구 코드. 비우면 강원 전체", example = "1")
+            @RequestParam(required = false) String sigunguCode,
+
+            @Parameter(description = "페이지 번호. 기본 1", example = "1")
+            @RequestParam(required = false, defaultValue = "1") int page,
+
+            @Parameter(description = "조회 개수. 기본 20", example = "20")
+            @RequestParam(required = false, defaultValue = "20") int size) {
+
+        return RsData.of(ResultCodes.OK, "검색 결과를 조회했습니다.",
+                attractionSearchService.search(query, sigunguCode, page, size));
     }
 
     /**

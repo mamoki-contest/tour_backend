@@ -1,6 +1,7 @@
 package com.mamoki.tour.domain.attraction.service;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +27,7 @@ import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
 import com.mamoki.tour.domain.region.entity.RegionCode;
 import com.mamoki.tour.domain.region.repository.RegionCodeRepository;
 import com.mamoki.tour.domain.visittiming.dto.VisitTiming;
+import com.mamoki.tour.domain.visittiming.enums.DateMode;
 import com.mamoki.tour.domain.visittiming.service.VisitTimingService;
 import com.mamoki.tour.global.enums.ApiProvider;
 import com.mamoki.tour.global.enums.DataStatus;
@@ -167,11 +169,28 @@ public class AttractionService {
 
     private List<AttractionResponse> toResponses(List<AttractionSnapshot> snapshots,
                                                  AttractionSearchRequest request) {
+
+        return describe(snapshots, request.sigunguCode(), request.dateMode(), request.visitDate());
+    }
+
+    /**
+     * 공급자 응답을 목록 항목으로 조립한다.
+     *
+     * <p>검색(#5)도 같은 항목을 내려줘야 해서 밖으로 열어 둔다. 조립을 따로 만들면 지역명이나
+     * 언급량 같은 필드가 목록과 검색에서 서로 다르게 채워진다.
+     *
+     * @param sigunguCode 시·군을 지정한 조회일 때만 중심관광지 순위를 붙인다.
+     * @param dateMode    날짜 탐색을 하지 않으면 null.
+     */
+    public List<AttractionResponse> describe(List<AttractionSnapshot> snapshots,
+                                             String sigunguCode,
+                                             DateMode dateMode,
+                                             LocalDate visitDate) {
         Map<String, RegionCode> regionsByLawdCode = regionCodeRepository
                 .findAllByAreaCode(GANGWON_AREA_CODE).stream()
                 .collect(Collectors.toMap(RegionCode::getLawdCode, Function.identity()));
 
-        Map<String, Integer> centerRanks = resolveCenterRanks(request.sigunguCode(), snapshots);
+        Map<String, Integer> centerRanks = resolveCenterRanks(sigunguCode, snapshots);
 
         List<String> contentIds = snapshots.stream().map(AttractionSnapshot::contentId).toList();
         Optional<Map<String, OnlineMentionView>> mentions =
@@ -182,7 +201,7 @@ public class AttractionService {
 
         // 날짜 탐색은 선택 기능이다. 모드를 지정하지 않으면 예측을 조회하지 않는다.
         Map<String, VisitTiming> visitTimings =
-                visitTimingService.resolve(snapshots, request.dateMode(), request.visitDate());
+                visitTimingService.resolve(snapshots, dateMode, visitDate);
 
         return snapshots.stream()
                 .map(snapshot -> AttractionResponse.of(
