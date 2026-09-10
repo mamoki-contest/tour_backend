@@ -1,5 +1,7 @@
 package com.mamoki.tour.domain.attraction.controller;
 
+import java.util.List;
+
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -13,6 +15,8 @@ import com.mamoki.tour.domain.attraction.dto.AttractionListResponse;
 import com.mamoki.tour.domain.attraction.dto.AttractionSearchRequest;
 import com.mamoki.tour.domain.attraction.service.AttractionDetailService;
 import com.mamoki.tour.domain.attraction.service.AttractionService;
+import com.mamoki.tour.domain.collection.dto.CollectionLookupResponse;
+import com.mamoki.tour.domain.collection.service.CollectionLookupService;
 import com.mamoki.tour.domain.search.dto.AttractionSearchResponse;
 import com.mamoki.tour.domain.search.service.AttractionSearchService;
 import com.mamoki.tour.global.rsdata.ResultCodes;
@@ -33,13 +37,16 @@ public class AttractionController {
     private final AttractionService attractionService;
     private final AttractionDetailService attractionDetailService;
     private final AttractionSearchService attractionSearchService;
+    private final CollectionLookupService collectionLookupService;
 
     public AttractionController(AttractionService attractionService,
                                 AttractionDetailService attractionDetailService,
-                                AttractionSearchService attractionSearchService) {
+                                AttractionSearchService attractionSearchService,
+                                CollectionLookupService collectionLookupService) {
         this.attractionService = attractionService;
         this.attractionDetailService = attractionDetailService;
         this.attractionSearchService = attractionSearchService;
+        this.collectionLookupService = collectionLookupService;
     }
 
     /**
@@ -151,6 +158,45 @@ public class AttractionController {
 
         return RsData.of(ResultCodes.OK, "검색 결과를 조회했습니다.",
                 attractionSearchService.search(query, sigunguCode, page, size));
+    }
+
+    /**
+     * 개인 컬렉션에 저장된 식별자로 최신 표시정보를 일괄 재조회한다.
+     *
+     * <p>한 건이 실패해도 나머지를 정상으로 돌려준다. 항목별 상태로 결과를 구분한다.
+     */
+    @Operation(
+            summary = "저장된 식별자 일괄 재조회",
+            description = """
+                    개인 컬렉션에 저장해 둔 표준 관광지 식별자로 최신 표시정보를 한 번에 조회합니다.
+
+                    컬렉션 자체와 사용자 태그·메모·방문 예정일은 프론트 저장소가 관리합니다.
+                    이 API 는 저장된 식별자를 받아 지금 상태를 되돌려주는 경계일 뿐이며,
+                    사용자별 저장소나 계정, 동기화를 제공하지 않습니다.
+
+                    ### 항목별 상태 (`items[].status`)
+                    - `AVAILABLE`: 최신 표시정보를 얻었습니다
+                    - `NOT_FOUND`: 공급자에 더 이상 없는 식별자입니다. 저장 목록에서 정리해도 됩니다
+                    - `UNAVAILABLE`: 공급자를 부르지 못해 **이번에는 확인하지 못했습니다**
+
+                    `UNAVAILABLE` 을 없어진 항목으로 표시하지 마세요. 저장해 둔 장소가 사라진
+                    것처럼 보이고, 지우라는 안내까지 받게 됩니다. 다시 조회하면 돌아옵니다.
+
+                    요청한 식별자는 결과에서 빠지지 않으며 순서도 그대로입니다.
+                    한 건이 실패해도 화면 전체 오류가 되지 않도록 200 으로 응답합니다.
+                    """)
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공. 항목별 status 로 결과를 확인합니다."),
+            @ApiResponse(responseCode = "400", description = "식별자가 없거나 한 번에 조회할 수 있는 수를 넘김")
+    })
+    @GetMapping("/batch")
+    public RsData<CollectionLookupResponse> lookupCollection(
+            @Parameter(description = "저장된 표준 관광지 식별자 목록. 최대 50개",
+                    example = "126508,125630")
+            @RequestParam List<String> contentIds) {
+
+        return RsData.of(ResultCodes.OK, "저장된 관광지를 조회했습니다.",
+                collectionLookupService.lookup(contentIds));
     }
 
     /**
