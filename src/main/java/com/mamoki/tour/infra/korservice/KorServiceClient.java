@@ -36,8 +36,12 @@ public class KorServiceClient {
     public KorServiceClient(KorServiceProperties properties) {
         this.properties = properties;
         // 공급자 응답 전용 매퍼. 알 수 없는 필드가 늘어나도 깨지지 않도록 별도로 둔다.
+        //
+        // 결과가 없으면 items 를 객체가 아니라 빈 문자열("")로 내려준다. 이를 해석 실패로
+        // 두면 0건이 정보 없음으로 둔갑해, 검색 결과가 없는 것과 공급자 장애를 구분할 수 없다.
         this.objectMapper = new ObjectMapper()
-                .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+                .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                .enable(DeserializationFeature.ACCEPT_EMPTY_STRING_AS_NULL_OBJECT);
         this.restClient = RestClient.builder()
                 .requestFactory(requestFactory(properties))
                 .build();
@@ -75,6 +79,44 @@ public class KorServiceClient {
 
         return requestKey("areaBasedList2",
                 areaBasedListParams(areaCode, sigunguCode, contentTypeId, pageNo, numOfRows));
+    }
+
+    /**
+     * 키워드로 관광지를 검색한다.
+     *
+     * @param contentTypeId 분류를 좁히고 싶을 때만 지정한다. null 이면 전체.
+     */
+    public String searchKeywordJson(String areaCode, String sigunguCode, String contentTypeId,
+                                    String keyword, int pageNo, int numOfRows) {
+
+        return fetchJson("searchKeyword2",
+                searchKeywordParams(areaCode, sigunguCode, contentTypeId, keyword, pageNo, numOfRows));
+    }
+
+    public String searchKeywordKey(String areaCode, String sigunguCode, String contentTypeId,
+                                   String keyword, int pageNo, int numOfRows) {
+
+        return requestKey("searchKeyword2",
+                searchKeywordParams(areaCode, sigunguCode, contentTypeId, keyword, pageNo, numOfRows));
+    }
+
+    private Map<String, String> searchKeywordParams(String areaCode, String sigunguCode,
+                                                    String contentTypeId, String keyword,
+                                                    int pageNo, int numOfRows) {
+        Map<String, String> params = commonParams();
+        params.put("numOfRows", String.valueOf(numOfRows));
+        params.put("pageNo", String.valueOf(pageNo));
+        params.put("areaCode", areaCode);
+        params.put("keyword", keyword);
+
+        if (sigunguCode != null) {
+            params.put("sigunguCode", sigunguCode);
+        }
+        if (contentTypeId != null) {
+            params.put("contentTypeId", contentTypeId);
+        }
+
+        return params;
     }
 
     /**
