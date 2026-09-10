@@ -1,0 +1,617 @@
+{
+  "response": {
+    "header": {
+      "resultCode": "0000",
+      "resultMsg": "OK"
+    },
+    "body": {
+      "items": {
+        "item": [
+          {
+            "signguCode": "11110",
+            "signguNm": "종로구",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "1",
+            "touDivNm": "현지인(a)",
+            "touNum": "176092.0",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "11110",
+            "signguNm": "종로구",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "2",
+            "touDivNm": "외지인(b)",
+            "touNum": "351676.5",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "11110",
+            "signguNm": "종로구",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "3",
+            "touDivNm": "외국인(c)",
+            "touNum": "49232.30999999999",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "26110",
+            "signguNm": "중구",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "1",
+            "touDivNm": "현지인(a)",
+            "touNum": "41370.0",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "26110",
+            "signguNm": "중구",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "2",
+            "touDivNm": "외지인(b)",
+            "touNum": "103449.5",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "26110",
+            "signguNm": "중구",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "3",
+            "touDivNm": "외국인(c)",
+            "touNum": "15439.800000000003",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51110",
+            "signguNm": "춘천시",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "1",
+            "touDivNm": "현지인(a)",
+            "touNum": "237863.5",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51110",
+            "signguNm": "춘천시",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "2",
+            "touDivNm": "외지인(b)",
+            "touNum": "70273.0",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51110",
+            "signguNm": "춘천시",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "3",
+            "touDivNm": "외국인(c)",
+            "touNum": "1612.5400000000002",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51130",
+            "signguNm": "원주시",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "1",
+            "touDivNm": "현지인(a)",
+            "touNum": "273007.0",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51130",
+            "signguNm": "원주시",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "2",
+            "touDivNm": "외지인(b)",
+            "touNum": "84115.5",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51130",
+            "signguNm": "원주시",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "3",
+            "touDivNm": "외국인(c)",
+            "touNum": "1082.6200000000001",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51150",
+            "signguNm": "강릉시",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "1",
+            "touDivNm": "현지인(a)",
+            "touNum": "198537.5",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51150",
+            "signguNm": "강릉시",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "2",
+            "touDivNm": "외지인(b)",
+            "touNum": "110106.5",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51150",
+            "signguNm": "강릉시",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "3",
+            "touDivNm": "외국인(c)",
+            "touNum": "1764.2",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51170",
+            "signguNm": "동해시",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "1",
+            "touDivNm": "현지인(a)",
+            "touNum": "72663.5",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51170",
+            "signguNm": "동해시",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "2",
+            "touDivNm": "외지인(b)",
+            "touNum": "37145.5",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51170",
+            "signguNm": "동해시",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "3",
+            "touDivNm": "외국인(c)",
+            "touNum": "644.6299999999999",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51190",
+            "signguNm": "태백시",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "1",
+            "touDivNm": "현지인(a)",
+            "touNum": "36701.0",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51190",
+            "signguNm": "태백시",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "2",
+            "touDivNm": "외지인(b)",
+            "touNum": "17678.5",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51190",
+            "signguNm": "태백시",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "3",
+            "touDivNm": "외국인(c)",
+            "touNum": "192.89",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51210",
+            "signguNm": "속초시",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "1",
+            "touDivNm": "현지인(a)",
+            "touNum": "78837.5",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51210",
+            "signguNm": "속초시",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "2",
+            "touDivNm": "외지인(b)",
+            "touNum": "98063.0",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51210",
+            "signguNm": "속초시",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "3",
+            "touDivNm": "외국인(c)",
+            "touNum": "1275.6",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51230",
+            "signguNm": "삼척시",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "1",
+            "touDivNm": "현지인(a)",
+            "touNum": "47687.5",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51230",
+            "signguNm": "삼척시",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "2",
+            "touDivNm": "외지인(b)",
+            "touNum": "37705.5",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51230",
+            "signguNm": "삼척시",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "3",
+            "touDivNm": "외국인(c)",
+            "touNum": "876.1800000000001",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51720",
+            "signguNm": "홍천군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "1",
+            "touDivNm": "현지인(a)",
+            "touNum": "45426.5",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51720",
+            "signguNm": "홍천군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "2",
+            "touDivNm": "외지인(b)",
+            "touNum": "73822.0",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51720",
+            "signguNm": "홍천군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "3",
+            "touDivNm": "외국인(c)",
+            "touNum": "1334.8500000000001",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51730",
+            "signguNm": "횡성군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "1",
+            "touDivNm": "현지인(a)",
+            "touNum": "30180.5",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51730",
+            "signguNm": "횡성군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "2",
+            "touDivNm": "외지인(b)",
+            "touNum": "33439.0",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51730",
+            "signguNm": "횡성군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "3",
+            "touDivNm": "외국인(c)",
+            "touNum": "1226.7800000000002",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51750",
+            "signguNm": "영월군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "1",
+            "touDivNm": "현지인(a)",
+            "touNum": "21868.0",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51750",
+            "signguNm": "영월군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "2",
+            "touDivNm": "외지인(b)",
+            "touNum": "24853.5",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51750",
+            "signguNm": "영월군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "3",
+            "touDivNm": "외국인(c)",
+            "touNum": "191.62000000000003",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51760",
+            "signguNm": "평창군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "1",
+            "touDivNm": "현지인(a)",
+            "touNum": "36715.0",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51760",
+            "signguNm": "평창군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "2",
+            "touDivNm": "외지인(b)",
+            "touNum": "57106.0",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51760",
+            "signguNm": "평창군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "3",
+            "touDivNm": "외국인(c)",
+            "touNum": "1044.3599999999997",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51770",
+            "signguNm": "정선군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "1",
+            "touDivNm": "현지인(a)",
+            "touNum": "29354.5",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51770",
+            "signguNm": "정선군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "2",
+            "touDivNm": "외지인(b)",
+            "touNum": "31860.5",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51770",
+            "signguNm": "정선군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "3",
+            "touDivNm": "외국인(c)",
+            "touNum": "219.03999999999996",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51780",
+            "signguNm": "철원군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "1",
+            "touDivNm": "현지인(a)",
+            "touNum": "30551.5",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51780",
+            "signguNm": "철원군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "2",
+            "touDivNm": "외지인(b)",
+            "touNum": "14553.0",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51780",
+            "signguNm": "철원군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "3",
+            "touDivNm": "외국인(c)",
+            "touNum": "294.27000000000004",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51790",
+            "signguNm": "화천군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "1",
+            "touDivNm": "현지인(a)",
+            "touNum": "17307.5",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51790",
+            "signguNm": "화천군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "2",
+            "touDivNm": "외지인(b)",
+            "touNum": "11018.0",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51790",
+            "signguNm": "화천군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "3",
+            "touDivNm": "외국인(c)",
+            "touNum": "98.55",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51800",
+            "signguNm": "양구군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "1",
+            "touDivNm": "현지인(a)",
+            "touNum": "19057.5",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51800",
+            "signguNm": "양구군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "2",
+            "touDivNm": "외지인(b)",
+            "touNum": "8127.0",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51800",
+            "signguNm": "양구군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "3",
+            "touDivNm": "외국인(c)",
+            "touNum": "144.79000000000002",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51810",
+            "signguNm": "인제군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "1",
+            "touDivNm": "현지인(a)",
+            "touNum": "26299.0",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51810",
+            "signguNm": "인제군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "2",
+            "touDivNm": "외지인(b)",
+            "touNum": "41664.0",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51810",
+            "signguNm": "인제군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "3",
+            "touDivNm": "외국인(c)",
+            "touNum": "548.8599999999999",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51820",
+            "signguNm": "고성군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "1",
+            "touDivNm": "현지인(a)",
+            "touNum": "26306.0",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51820",
+            "signguNm": "고성군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "2",
+            "touDivNm": "외지인(b)",
+            "touNum": "52962.0",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51820",
+            "signguNm": "고성군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "3",
+            "touDivNm": "외국인(c)",
+            "touNum": "320.66999999999996",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51830",
+            "signguNm": "양양군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "1",
+            "touDivNm": "현지인(a)",
+            "touNum": "32123.0",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51830",
+            "signguNm": "양양군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "2",
+            "touDivNm": "외지인(b)",
+            "touNum": "56052.5",
+            "baseYmd": "20260810"
+          },
+          {
+            "signguCode": "51830",
+            "signguNm": "양양군",
+            "daywkDivCd": "1",
+            "daywkDivNm": "월요일",
+            "touDivCd": "3",
+            "touDivNm": "외국인(c)",
+            "touNum": "713.16",
+            "baseYmd": "20260810"
+          }
+        ]
+      },
+      "numOfRows": 1000,
+      "pageNo": 1,
+      "totalCount": 807
+    }
+  }
+}

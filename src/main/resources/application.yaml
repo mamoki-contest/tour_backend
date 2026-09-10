@@ -75,6 +75,24 @@ tour:
       max-pages: ${TAR_RLTE_TAR_MAX_PAGES:5}
       connect-timeout: 5s
       read-timeout: 30s
+    data-lab:
+      # 기초지자체 일별 방문자수. 지역 필터 파라미터가 없어 전국이 통째로 오고, 강원만 우리가 추린다.
+      base-url: ${DATA_LAB_BASE_URL:https://apis.data.go.kr/B551011/DataLabService}
+      # KorService2·LocgoHub 와 같은 공공데이터포털 인증키를 공유한다.
+      service-key: ${KOR_SERVICE_KEY:}
+      mobile-app: tour
+      # 기준 기간의 마지막 날 고정값(yyyyMMdd). 비우면 lag-days 로 계산한다.
+      end-ymd: ${DATA_LAB_END_YMD:}
+      # 공급자 공개 지연. 2026-09-10 확인 기준 약 30일이다. 지연이 길어지면 늘린다.
+      lag-days: ${DATA_LAB_LAG_DAYS:30}
+      # 하루만 보면 요일 편차가 그대로 드러나 한 주를 묶는다.
+      window-days: ${DATA_LAB_WINDOW_DAYS:7}
+      # 하루가 전국 807행이라 7일이면 6천 행에 가깝다.
+      rows-per-page: ${DATA_LAB_ROWS:1000}
+      # 호출이 무한히 늘어나지 않도록 두는 상한이다.
+      max-pages: ${DATA_LAB_MAX_PAGES:10}
+      connect-timeout: 5s
+      read-timeout: 30s
     naver:
       # 검색 API 는 NAVER API HUB 로 이관되었다. 개발자센터 도메인·헤더로는 인증되지 않는다.
       base-url: ${NAVER_API_HUB_BASE_URL:https://naverapihub.apigw.ntruss.com}
