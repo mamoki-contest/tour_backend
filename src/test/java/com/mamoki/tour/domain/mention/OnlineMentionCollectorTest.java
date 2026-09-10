@@ -6,6 +6,8 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.List;
@@ -27,6 +29,11 @@ import com.mamoki.tour.domain.mention.service.OnlineMentionCollectResult;
 import com.mamoki.tour.domain.mention.service.OnlineMentionCollector;
 import com.mamoki.tour.domain.region.entity.RegionCode;
 import com.mamoki.tour.domain.region.repository.RegionCodeRepository;
+import com.mamoki.tour.domain.tmaprank.entity.TmapRankEntry;
+import com.mamoki.tour.domain.tmaprank.entity.TmapRankSnapshot;
+import com.mamoki.tour.domain.tmaprank.repository.TmapRankEntryRepository;
+import com.mamoki.tour.domain.tmaprank.repository.TmapRankSnapshotRepository;
+import com.mamoki.tour.global.enums.CatalogMatchStatus;
 import com.mamoki.tour.global.enums.DataStatus;
 import com.mamoki.tour.global.enums.MentionStatus;
 import com.mamoki.tour.global.enums.SnapshotStatus;
@@ -58,6 +65,12 @@ class OnlineMentionCollectorTest {
     @Autowired
     private RegionCodeRepository regionCodeRepository;
 
+    @Autowired
+    private TmapRankSnapshotRepository tmapSnapshotRepository;
+
+    @Autowired
+    private TmapRankEntryRepository tmapEntryRepository;
+
     @MockitoBean
     private NaverBlogSearchClient searchClient;
 
@@ -65,7 +78,33 @@ class OnlineMentionCollectorTest {
     void reset() {
         entryRepository.deleteAllInBatch();
         snapshotRepository.deleteAllInBatch();
+        tmapEntryRepository.deleteAllInBatch();
+        tmapSnapshotRepository.deleteAllInBatch();
         attractionRepository.deleteAllInBatch();
+    }
+
+    /** 활성 TMAP 스냅샷에 확정 매칭된 관광지를 하나 올려 둔다. */
+    private void saveActiveTmapRank(String contentId, String placeName) {
+        TmapRankSnapshot snapshot = tmapSnapshotRepository.save(TmapRankSnapshot.builder()
+                .version("tmap-" + contentId)
+                .sourcePeriod("202508-202607")
+                .downloadedOn(LocalDate.now())
+                .importedAt(LocalDateTime.now())
+                .status(SnapshotStatus.ACTIVE)
+                .sourceFileName("test.zip")
+                .rowCount(1)
+                .build());
+
+        tmapEntryRepository.save(TmapRankEntry.builder()
+                .snapshot(snapshot)
+                .rawRegionName("정선군")
+                .rawPlaceName(placeName)
+                .normalizedName(placeName)
+                .searchRatio(new BigDecimal("1.234"))
+                .sourceRank(3)
+                .contentId(contentId)
+                .matchStatus(CatalogMatchStatus.MATCHED)
+                .build());
     }
 
     private Attraction save(String contentId, String name, String lawdCode) {
@@ -121,6 +160,57 @@ class OnlineMentionCollectorTest {
     @DisplayName("정상 0건은 수집 성공으로 다룬다")
     void zeroTotalIsStillCollected() {
         save("1", "이름없는어느곳", "51150");
+        given(searchClient.search(anyString())).willReturn(response(0L));
+
+        OnlineMentionCollectResult result = collector.collect(MONTH);
+
+        assertThat(result.collected()).isEqualTo(1);
+        assertThat(entryRepository.findAll()).singleElement().satisfies(entry -> {
+            assertThat(entry.getStatus()).isEqualTo(MentionStatus.COLLECTED);
+            assertThat(entry.getMentionTotal()).isZero();
+            assertThat(entry.isSortable()).isTrue();
+        });
+    }
+
+    @Test
+    @DisplayName("TMAP 순위에 있는데 0건이면 모호로 표시하고 정렬에서 뺀다")
+    void marksVerifiedZeroAsAmbiguous() {
+        save("1", "강원랜드카지노", "51770");
+        saveActiveTmapRank("1", "강원랜드카지노");
+        given(searchClient.search(anyString())).willReturn(response(0L));
+
+        OnlineMentionCollectResult result = collector.collect(MONTH);
+
+        assertThat(result.ambiguous()).isEqualTo(1);
+        assertThat(result.collected()).isZero();
+        assertThat(entryRepository.findAll()).singleElement().satisfies(entry -> {
+            assertThat(entry.getStatus()).isEqualTo(MentionStatus.AMBIGUOUS);
+            assertThat(entry.isSortable()).isFalse();
+            assertThat(entry.getNote()).contains("TMAP");
+        });
+    }
+
+    @Test
+    @DisplayName("TMAP 순위에 있어도 0건이 아니면 그대로 수집한다")
+    void keepsNonZeroTotalForRankedPlace() {
+        save("1", "경포해변", "51150");
+        saveActiveTmapRank("1", "경포해변");
+        given(searchClient.search(anyString())).willReturn(response(140006L));
+
+        OnlineMentionCollectResult result = collector.collect(MONTH);
+
+        assertThat(result.collected()).isEqualTo(1);
+        assertThat(entryRepository.findAll()).singleElement().satisfies(entry -> {
+            assertThat(entry.getStatus()).isEqualTo(MentionStatus.COLLECTED);
+            assertThat(entry.getMentionTotal()).isEqualTo(140006L);
+        });
+    }
+
+    @Test
+    @DisplayName("TMAP 순위에 없는 0건은 실제로 언급이 적은 것으로 두고 정렬에 쓴다")
+    void keepsUnrankedZeroSortable() {
+        save("1", "이름없는어느곳", "51150");
+        saveActiveTmapRank("2", "다른곳");
         given(searchClient.search(anyString())).willReturn(response(0L));
 
         OnlineMentionCollectResult result = collector.collect(MONTH);

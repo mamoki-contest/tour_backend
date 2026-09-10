@@ -25,6 +25,19 @@ public interface TmapRankEntryRepository extends JpaRepository<TmapRankEntry, Lo
     List<TmapRankEntry> findMatchedByContentIds(@Param("snapshot") TmapRankSnapshot snapshot,
                                                      @Param("contentIds") Collection<String> contentIds);
 
+    /**
+     * 활성 스냅샷에서 확정 매칭된 관광지 식별자를 모두 가져온다.
+     *
+     * <p>언급량 수집이 카탈로그 전체를 돌면서 장소마다 순위 수록 여부를 물어야 해서, 식별자만
+     * 한 번에 받아 메모리에서 확인한다. 장소마다 조회하면 카탈로그 크기만큼 질의가 늘어난다.
+     */
+    @Query("""
+            select ai.contentId from TmapRankEntry ai
+            where ai.snapshot = :snapshot
+              and ai.matchStatus = com.mamoki.tour.global.enums.CatalogMatchStatus.MATCHED
+            """)
+    List<String> findMatchedContentIds(@Param("snapshot") TmapRankSnapshot snapshot);
+
     long countBySnapshot(TmapRankSnapshot snapshot);
 
     void deleteBySnapshot(TmapRankSnapshot snapshot);
