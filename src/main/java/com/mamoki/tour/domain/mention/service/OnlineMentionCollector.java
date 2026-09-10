@@ -7,6 +7,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,7 +20,11 @@ import com.mamoki.tour.domain.attraction.support.PlaceNameNormalizer;
 import com.mamoki.tour.domain.mention.entity.OnlineMentionEntry;
 import com.mamoki.tour.domain.mention.entity.OnlineMentionSnapshot;
 import com.mamoki.tour.domain.mention.support.SearchQueryRule;
+import com.mamoki.tour.domain.tmaprank.entity.TmapRankSnapshot;
+import com.mamoki.tour.domain.tmaprank.repository.TmapRankEntryRepository;
+import com.mamoki.tour.domain.tmaprank.repository.TmapRankSnapshotRepository;
 import com.mamoki.tour.global.enums.MentionStatus;
+import com.mamoki.tour.global.enums.SnapshotStatus;
 import com.mamoki.tour.infra.naver.NaverApiHubProperties;
 import com.mamoki.tour.infra.naver.NaverAuthenticationException;
 import com.mamoki.tour.infra.naver.NaverBlogSearchClient;
@@ -47,17 +53,23 @@ public class OnlineMentionCollector {
     private final SearchQueryRule queryRule;
     private final OnlineMentionSnapshotWriter writer;
     private final NaverApiHubProperties properties;
+    private final TmapRankSnapshotRepository tmapSnapshotRepository;
+    private final TmapRankEntryRepository tmapEntryRepository;
 
     public OnlineMentionCollector(AttractionRepository attractionRepository,
                                   NaverBlogSearchClient searchClient,
                                   SearchQueryRule queryRule,
                                   OnlineMentionSnapshotWriter writer,
-                                  NaverApiHubProperties properties) {
+                                  NaverApiHubProperties properties,
+                                  TmapRankSnapshotRepository tmapSnapshotRepository,
+                                  TmapRankEntryRepository tmapEntryRepository) {
         this.attractionRepository = attractionRepository;
         this.searchClient = searchClient;
         this.queryRule = queryRule;
         this.writer = writer;
         this.properties = properties;
+        this.tmapSnapshotRepository = tmapSnapshotRepository;
+        this.tmapEntryRepository = tmapEntryRepository;
     }
 
     public OnlineMentionCollectResult collect(YearMonth month) {
@@ -68,6 +80,7 @@ public class OnlineMentionCollector {
         }
 
         Map<String, Integer> nameCounts = countNormalizedNames(catalog);
+        Set<String> tmapRanked = findTmapRankedContentIds();
         OnlineMentionSnapshot snapshot =
                 writer.start(month.format(MONTH), queryRule.version(), catalog.size());
 
@@ -78,7 +91,7 @@ public class OnlineMentionCollector {
 
         try {
             for (Attraction attraction : catalog) {
-                OnlineMentionEntry entry = collectOne(snapshot, attraction, nameCounts);
+                OnlineMentionEntry entry = collectOne(snapshot, attraction, nameCounts, tmapRanked);
                 buffer.add(entry);
 
                 switch (entry.getStatus()) {
@@ -113,7 +126,7 @@ public class OnlineMentionCollector {
     }
 
     private OnlineMentionEntry collectOne(OnlineMentionSnapshot snapshot, Attraction attraction,
-                                          Map<String, Integer> nameCounts) {
+                                          Map<String, Integer> nameCounts, Set<String> tmapRanked) {
 
         String query = queryRule.build(attraction.getName(), regionName(attraction));
 
@@ -132,7 +145,36 @@ public class OnlineMentionCollector {
         }
 
         Long total = searchWithRetry(query);
+
+        // 검색되는 장소인데 0 건이면 표기가 달라 못 찾은 것이다. 그 0 을 언급량으로 저장하지 않는다.
+        if (total != null && total == 0L && tmapRanked.contains(attraction.getContentId())) {
+            return entry(snapshot, attraction, query, total, MentionStatus.AMBIGUOUS,
+                    "TMAP 검색순위에 수록된 장소인데 언급량이 0건입니다. 표기가 다를 수 있습니다.");
+        }
+
         return entry(snapshot, attraction, query, total, MentionStatus.COLLECTED, null);
+    }
+
+    /**
+     * 활성 TMAP 스냅샷에 확정 매칭된 관광지 식별자.
+     *
+     * <p>TMAP 순위에 오른 장소는 실제로 검색되는 장소다. 그런 장소의 언급량이 0 건이면
+     * 언급이 없는 것이 아니라 우리 검색어가 그 장소를 못 짚은 것으로 본다.
+     *
+     * <p>입장객 통계도 같은 근거가 되지만 임포터가 아직 없다. 값을 갖게 되면 여기에 더한다.
+     *
+     * @return 활성 스냅샷이 없으면 빈 집합. 판정을 건너뛰고 기존 동작을 유지한다.
+     */
+    private Set<String> findTmapRankedContentIds() {
+        Optional<TmapRankSnapshot> active =
+                tmapSnapshotRepository.findByStatus(SnapshotStatus.ACTIVE);
+
+        if (active.isEmpty()) {
+            log.info("활성 TMAP 스냅샷이 없어 0건 검증을 건너뜁니다.");
+            return Set.of();
+        }
+
+        return Set.copyOf(tmapEntryRepository.findMatchedContentIds(active.get()));
     }
 
     /**
