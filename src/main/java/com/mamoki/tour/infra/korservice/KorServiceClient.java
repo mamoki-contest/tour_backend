@@ -82,6 +82,49 @@ public class KorServiceClient {
     }
 
     /**
+     * 법정동 시·도 코드로 지역 기반 목록을 조회한다.
+     *
+     * <p>{@code areaCode} 로 거르면 공급자 데이터에서 <b>areacode 가 비어 있는 항목이 통째로
+     * 빠진다.</b> 남이섬·레고랜드·국립춘천박물관 같은 대표 관광지가 그렇다. 표본으로 확인한
+     * 비율이 64% 였다. 같은 항목들도 법정동 코드({@code lDongRegnCd})는 정상으로 들고 있어
+     * 이쪽으로 물으면 빠지지 않는다. 강원 기준 2,371곳에서 4,746곳으로 늘어난다.
+     *
+     * @param lDongRegnCd   법정동 시·도 코드 2자리. 강원은 51.
+     * @param lDongSignguCd 법정동 시·군구 코드 3자리. null 이면 시·도 전체.
+     */
+    public String areaBasedListByLawdJson(String lDongRegnCd, String lDongSignguCd,
+                                          String contentTypeId, int pageNo, int numOfRows) {
+
+        return fetchJson("areaBasedList2",
+                areaBasedListByLawdParams(lDongRegnCd, lDongSignguCd, contentTypeId, pageNo, numOfRows));
+    }
+
+    public String areaBasedListByLawdKey(String lDongRegnCd, String lDongSignguCd,
+                                         String contentTypeId, int pageNo, int numOfRows) {
+
+        return requestKey("areaBasedList2",
+                areaBasedListByLawdParams(lDongRegnCd, lDongSignguCd, contentTypeId, pageNo, numOfRows));
+    }
+
+    private Map<String, String> areaBasedListByLawdParams(String lDongRegnCd, String lDongSignguCd,
+                                                          String contentTypeId,
+                                                          int pageNo, int numOfRows) {
+        Map<String, String> params = commonParams();
+        params.put("numOfRows", String.valueOf(numOfRows));
+        params.put("pageNo", String.valueOf(pageNo));
+        params.put("lDongRegnCd", lDongRegnCd);
+
+        if (lDongSignguCd != null) {
+            params.put("lDongSignguCd", lDongSignguCd);
+        }
+        if (contentTypeId != null) {
+            params.put("contentTypeId", contentTypeId);
+        }
+
+        return params;
+    }
+
+    /**
      * 키워드로 관광지를 검색한다.
      *
      * @param contentTypeId 분류를 좁히고 싶을 때만 지정한다. null 이면 전체.
