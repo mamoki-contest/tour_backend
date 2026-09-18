@@ -24,6 +24,8 @@ import com.mamoki.tour.domain.attraction.dto.TmapRankView;
 import com.mamoki.tour.domain.attraction.service.AttractionService;
 import com.mamoki.tour.domain.cache.dto.CachedResponse;
 import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
+import com.mamoki.tour.domain.region.entity.RegionCode;
+import com.mamoki.tour.domain.region.repository.RegionCodeRepository;
 import com.mamoki.tour.domain.search.dto.AttractionSearchResponse;
 import com.mamoki.tour.domain.search.enums.SearchResultType;
 import com.mamoki.tour.domain.search.enums.SupportedTheme;
@@ -51,7 +53,7 @@ class AttractionSearchServiceTest {
         emptyFixture = read("/fixtures/korservice-searchKeyword2-empty.json");
 
         KorServiceClient client = Mockito.mock(KorServiceClient.class);
-        given(client.searchKeywordKey(anyString(), any(), any(), anyString(), anyInt(), anyInt()))
+        given(client.searchKeywordByLawdKey(anyString(), any(), any(), anyString(), anyInt(), anyInt()))
                 .willAnswer(invocation -> "searchKeyword2?keyword=" + invocation.getArgument(3));
         given(client.parse(anyString(), anyString()))
                 .willAnswer(invocation -> new KorServiceClient(properties())
@@ -71,7 +73,13 @@ class AttractionSearchServiceTest {
                             .toList();
                 });
 
-        service = new AttractionSearchService(client, cacheService, attractionService);
+        RegionCodeRepository regionCodeRepository = Mockito.mock(RegionCodeRepository.class);
+        given(regionCodeRepository.findByAreaCodeAndSigunguCode(anyString(), anyString()))
+                .willReturn(java.util.Optional.of(RegionCode.builder()
+                        .lawdCode("51150").areaCode("32").sigunguCode("1").name("강릉시").build()));
+
+        service = new AttractionSearchService(client, cacheService, attractionService,
+                regionCodeRepository);
     }
 
     private static String read(String path) throws Exception {

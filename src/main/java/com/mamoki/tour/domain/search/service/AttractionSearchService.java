@@ -21,10 +21,13 @@ import com.mamoki.tour.domain.search.dto.AttractionSearchResponse;
 import com.mamoki.tour.domain.search.dto.ThemeView;
 import com.mamoki.tour.domain.search.enums.SearchResultType;
 import com.mamoki.tour.domain.search.enums.SupportedTheme;
+import com.mamoki.tour.domain.region.repository.RegionCodeRepository;
 import com.mamoki.tour.domain.search.support.ThemeResolver;
 import com.mamoki.tour.global.enums.ApiProvider;
 import com.mamoki.tour.global.enums.DataStatus;
 import com.mamoki.tour.global.exception.ExternalApiException;
+import com.mamoki.tour.global.exception.ServiceException;
+import com.mamoki.tour.global.rsdata.ResultCodes;
 import com.mamoki.tour.infra.korservice.KorServiceClient;
 import com.mamoki.tour.infra.korservice.KorServiceItemConverter;
 import com.mamoki.tour.infra.korservice.dto.KorServiceResponse;
@@ -44,8 +47,16 @@ import com.mamoki.tour.infra.korservice.dto.KorServiceResponse;
 @Service
 public class AttractionSearchService {
 
-    /** 한국관광공사 영역 코드. 강원. */
+    /** 한국관광공사 영역 코드. 강원. 지역 매핑을 찾을 때만 쓴다. */
     private static final String GANGWON_AREA_CODE = "32";
+
+    /**
+     * 법정동 시·도 코드. 강원.
+     *
+     * <p>목록과 같은 이유로 법정동 코드로 조회한다. `남이섬` 을 areaCode=32 로 검색하면
+     * 0건이고 lDongRegnCd=51 로는 4건이다(#46).
+     */
+    private static final String GANGWON_LAWD_REGION_CODE = "51";
 
     private static final Duration CACHE_TTL = Duration.ofHours(24);
     private static final String OPERATION = "searchKeyword2";
@@ -58,13 +69,16 @@ public class AttractionSearchService {
     private final KorServiceClient korServiceClient;
     private final ExternalApiCacheService cacheService;
     private final AttractionService attractionService;
+    private final RegionCodeRepository regionCodeRepository;
 
     public AttractionSearchService(KorServiceClient korServiceClient,
                                    ExternalApiCacheService cacheService,
-                                   AttractionService attractionService) {
+                                   AttractionService attractionService,
+                                   RegionCodeRepository regionCodeRepository) {
         this.korServiceClient = korServiceClient;
         this.cacheService = cacheService;
         this.attractionService = attractionService;
+        this.regionCodeRepository = regionCodeRepository;
     }
 
     public AttractionSearchResponse search(String query, String sigunguCode, int page, int size) {
@@ -187,14 +201,16 @@ public class AttractionSearchService {
     }
 
     private Fetched fetch(String keyword, String sigunguCode) {
-        String requestKey = korServiceClient.searchKeywordKey(
-                GANGWON_AREA_CODE, sigunguCode, null, keyword, 1, FETCH_SIZE);
+        String lawdSigunguCode = toLawdSigunguCode(sigunguCode);
+
+        String requestKey = korServiceClient.searchKeywordByLawdKey(
+                GANGWON_LAWD_REGION_CODE, lawdSigunguCode, null, keyword, 1, FETCH_SIZE);
 
         CachedResponse cached = cacheService.fetch(
                 ApiProvider.KOR_SERVICE2,
                 requestKey,
-                () -> korServiceClient.searchKeywordJson(
-                        GANGWON_AREA_CODE, sigunguCode, null, keyword, 1, FETCH_SIZE),
+                () -> korServiceClient.searchKeywordByLawdJson(
+                        GANGWON_LAWD_REGION_CODE, lawdSigunguCode, null, keyword, 1, FETCH_SIZE),
                 CACHE_TTL);
 
         if (!cached.hasBody()) {
@@ -212,6 +228,22 @@ public class AttractionSearchService {
         // 여기서 빈 목록은 0건이다. 공급자를 못 부른 것과 구분해 상태를 그대로 전한다.
         return new Fetched(new ArrayList<>(KorServiceItemConverter.convertAll(parsed.items())),
                 cached.status(), cached.collectedAt());
+    }
+
+    /**
+     * 공개 파라미터인 관광공사 시·군구 코드를 공급자에게 보낼 법정동 코드로 옮긴다.
+     *
+     * @throws ServiceException 매핑이 없는 시·군구 코드인 경우. 조건을 조용히 무시하지 않는다.
+     */
+    private String toLawdSigunguCode(String sigunguCode) {
+        if (sigunguCode == null) {
+            return null;
+        }
+
+        return regionCodeRepository.findByAreaCodeAndSigunguCode(GANGWON_AREA_CODE, sigunguCode)
+                .map(region -> region.getLawdCode().substring(2))
+                .orElseThrow(() -> new ServiceException(ResultCodes.INVALID_REQUEST,
+                        "알 수 없는 시·군구 코드입니다: " + sigunguCode));
     }
 
     private record Fetched(List<AttractionSnapshot> snapshots, DataStatus status,

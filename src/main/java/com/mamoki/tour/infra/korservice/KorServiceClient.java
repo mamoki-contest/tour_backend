@@ -163,6 +163,47 @@ public class KorServiceClient {
     }
 
     /**
+     * 법정동 시·도 코드로 키워드 검색한다.
+     *
+     * <p>목록과 같은 이유다. {@code areaCode} 로 거르면 areacode 가 빈 항목이 빠진다.
+     * `남이섬` 을 areaCode=32 로 검색하면 0건, lDongRegnCd=51 로는 4건이다.
+     */
+    public String searchKeywordByLawdJson(String lDongRegnCd, String lDongSignguCd,
+                                          String contentTypeId, String keyword,
+                                          int pageNo, int numOfRows) {
+
+        return fetchJson("searchKeyword2", searchKeywordByLawdParams(
+                lDongRegnCd, lDongSignguCd, contentTypeId, keyword, pageNo, numOfRows));
+    }
+
+    public String searchKeywordByLawdKey(String lDongRegnCd, String lDongSignguCd,
+                                         String contentTypeId, String keyword,
+                                         int pageNo, int numOfRows) {
+
+        return requestKey("searchKeyword2", searchKeywordByLawdParams(
+                lDongRegnCd, lDongSignguCd, contentTypeId, keyword, pageNo, numOfRows));
+    }
+
+    private Map<String, String> searchKeywordByLawdParams(String lDongRegnCd, String lDongSignguCd,
+                                                          String contentTypeId, String keyword,
+                                                          int pageNo, int numOfRows) {
+        Map<String, String> params = commonParams();
+        params.put("numOfRows", String.valueOf(numOfRows));
+        params.put("pageNo", String.valueOf(pageNo));
+        params.put("lDongRegnCd", lDongRegnCd);
+        params.put("keyword", keyword);
+
+        if (lDongSignguCd != null) {
+            params.put("lDongSignguCd", lDongSignguCd);
+        }
+        if (contentTypeId != null) {
+            params.put("contentTypeId", contentTypeId);
+        }
+
+        return params;
+    }
+
+    /**
      * 관광지 상세 기본정보를 조회한다.
      *
      * <p>목록과 같은 항목 구조에 전화번호·홈페이지·개요가 더 붙는다. 목록에는 없는 정보라
