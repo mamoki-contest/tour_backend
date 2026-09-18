@@ -26,6 +26,10 @@ import com.mamoki.tour.domain.region.entity.RegionCode;
 import com.mamoki.tour.domain.region.repository.RegionCodeRepository;
 import com.mamoki.tour.domain.relatedplace.dto.RelatedPlaces;
 import com.mamoki.tour.domain.relatedplace.enums.RelatedPlacesStatus;
+import com.mamoki.tour.domain.currentaccess.dto.CurrentAccessView;
+import com.mamoki.tour.domain.currentaccess.dto.ParkingView;
+import com.mamoki.tour.domain.currentaccess.dto.RoadFlowView;
+import com.mamoki.tour.domain.currentaccess.service.CurrentAccessService;
 import com.mamoki.tour.domain.relatedplace.service.RelatedPlaceService;
 import com.mamoki.tour.domain.visittiming.dto.DailyVisitTiming;
 import com.mamoki.tour.domain.visittiming.dto.VisitTiming;
@@ -54,6 +58,7 @@ class AttractionDetailServiceTest {
     private RegionCodeRepository regionCodeRepository;
     private VisitTimingService visitTimingService;
     private RelatedPlaceService relatedPlaceService;
+    private CurrentAccessService currentAccessService;
     private KorServiceClient client;
 
     @BeforeEach
@@ -75,8 +80,14 @@ class AttractionDetailServiceTest {
         given(relatedPlaceService.resolve(any(), any()))
                 .willReturn(RelatedPlaces.noData("202607"));
 
+        currentAccessService = Mockito.mock(CurrentAccessService.class);
+        given(currentAccessService.resolve(any(), any())).willReturn(
+                new CurrentAccessView(RoadFlowView.noData(), ParkingView.noData(),
+                        java.time.LocalDateTime.now(), "국가교통정보센터"));
+
         detailService = new AttractionDetailService(
-                client, cacheService, regionCodeRepository, visitTimingService, relatedPlaceService);
+                client, cacheService, regionCodeRepository, visitTimingService, relatedPlaceService,
+                currentAccessService);
     }
 
     private KorServiceClient realClient() {

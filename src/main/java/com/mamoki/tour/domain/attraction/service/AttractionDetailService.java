@@ -11,6 +11,7 @@ import com.mamoki.tour.domain.attraction.dto.AttractionDetailSnapshot;
 import com.mamoki.tour.domain.attraction.dto.AttractionSnapshot;
 import com.mamoki.tour.domain.cache.dto.CachedResponse;
 import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
+import com.mamoki.tour.domain.currentaccess.service.CurrentAccessService;
 import com.mamoki.tour.domain.region.entity.RegionCode;
 import com.mamoki.tour.domain.region.repository.RegionCodeRepository;
 import com.mamoki.tour.domain.relatedplace.dto.RelatedPlaces;
@@ -45,17 +46,20 @@ public class AttractionDetailService {
     private final RegionCodeRepository regionCodeRepository;
     private final VisitTimingService visitTimingService;
     private final RelatedPlaceService relatedPlaceService;
+    private final CurrentAccessService currentAccessService;
 
     public AttractionDetailService(KorServiceClient korServiceClient,
                                    ExternalApiCacheService cacheService,
                                    RegionCodeRepository regionCodeRepository,
                                    VisitTimingService visitTimingService,
-                                   RelatedPlaceService relatedPlaceService) {
+                                   RelatedPlaceService relatedPlaceService,
+                                   CurrentAccessService currentAccessService) {
         this.korServiceClient = korServiceClient;
         this.cacheService = cacheService;
         this.regionCodeRepository = regionCodeRepository;
         this.visitTimingService = visitTimingService;
         this.relatedPlaceService = relatedPlaceService;
+        this.currentAccessService = currentAccessService;
     }
 
     public AttractionDetailResponse getDetail(String contentId) {
@@ -99,6 +103,7 @@ public class AttractionDetailService {
                 KorServiceItemConverter.SOURCE,
                 timing.summary(),
                 timing.daily(),
+                currentAccessService.resolve(basic.latitude(), basic.longitude()),
                 related.alternatives(),
                 related.companions());
     }
