@@ -42,6 +42,30 @@ cp .env.example .env
 ./gradlew test
 ```
 
+## 적재·수집 작업
+
+카탈로그·언급량·TMAP·입장객 적재는 커맨드라인으로 실행합니다.
+
+```bash
+java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=catalog
+java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=mention --month=202609
+java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=tmap --dir=sample --downloaded-on=2026-09-06
+java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=visitor-stats --file="sample/주요관광지점 입장객(2004.07 이후)_260918083154.xls"
+```
+
+`--job` 을 주지 않으면 어떤 작업도 실행되지 않고 평소대로 서버만 뜹니다.
+
+| 작업 | 하는 일 | 추가 인자 |
+| --- | --- | --- |
+| `catalog` | 강원 관광지 카탈로그 적재 | 없음 |
+| `mention` | 온라인 언급량 수집 | `--month` (비우면 이번 달) |
+| `tmap` | TMAP 검색순위 zip 묶음 적재 | `--dir` 필수, `--downloaded-on` |
+| `visitor-stats` | 주요관광지점 입장객통계 엑셀 적재 | `--file` 필수, `--downloaded-on` |
+
+**`catalog` 을 먼저 돌려야 합니다.** 언급량 수집은 카탈로그를 순회하고, TMAP·입장객은 카탈로그의 `contentId` 에 매칭되므로 카탈로그가 비어 있으면 수집이 멈추거나 매칭이 0건이 됩니다.
+
+관리 API 는 두지 않았습니다. 이 서비스에는 인증 체계가 없어서(PRD 가 회원가입·서버 계정을 범위 밖으로 둠) 관리 API 를 열면 누구나 호출해 외부 API 를 소진시키거나 스냅샷을 갈아치울 수 있습니다.
+
 ## API 문서
 
 앱을 띄운 뒤 아래에서 확인합니다.
