@@ -149,6 +149,18 @@ class AttractionControllerTest {
                 .andExpect(jsonPath("$.data[0].field").value("sigunguCode"));
     }
 
+    /**
+     * 요청 파라미터의 날짜는 실제 시계로 검증된다({@code @FutureOrPresent}). 목으로 막을 수
+     * 없으므로 실행 시점 기준 상대 날짜를 쓴다. 고정 날짜를 쓰면 그 날이 지나는 순간
+     * 코드를 건드리지 않아도 테스트가 깨진다.
+     *
+     * <p>반대로 응답 값은 목이 정하므로 고정 날짜를 그대로 둔다. 직렬화 결과를 확인하는
+     * 단언이라 값이 고정되어 있어야 읽기 쉽다.
+     */
+    private static String requestDate(int plusDays) {
+        return LocalDate.now().plusDays(plusDays).toString();
+    }
+
     @Test
     @DisplayName("확정 모드 응답의 날짜 탐색 필드가 모두 내려간다")
     void serializesFixedVisitTiming() throws Exception {
@@ -160,7 +172,7 @@ class AttractionControllerTest {
 
         mvc.perform(get("/api/v1/attractions")
                         .param("dateMode", "FIXED")
-                        .param("visitDate", "2026-09-11"))
+                        .param("visitDate", requestDate(3)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items[0].visitTiming.dateMode").value("FIXED"))
                 .andExpect(jsonPath("$.data.items[0].visitTiming.status").value("LOW"))
@@ -202,7 +214,7 @@ class AttractionControllerTest {
 
         mvc.perform(get("/api/v1/attractions")
                         .param("dateMode", "FIXED")
-                        .param("visitDate", "2026-11-07"))
+                        .param("visitDate", requestDate(60)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items[0].visitTiming.status").value("OUT_OF_RANGE"))
                 .andExpect(jsonPath("$.data.items[0].visitTiming.supportedTo").value("2026-10-07"));
@@ -233,7 +245,7 @@ class AttractionControllerTest {
     void rejectsFlexibleWithVisitDate() throws Exception {
         mvc.perform(get("/api/v1/attractions")
                         .param("dateMode", "FLEXIBLE")
-                        .param("visitDate", "2026-09-11"))
+                        .param("visitDate", requestDate(3)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.resultCode").value("400-1"))
                 .andExpect(jsonPath("$.data[0].field").value("visitDateAbsentWhenFlexible"));
