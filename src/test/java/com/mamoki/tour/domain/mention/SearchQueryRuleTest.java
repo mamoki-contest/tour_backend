@@ -15,8 +15,8 @@ class SearchQueryRuleTest {
     }
 
     @Test
-    @DisplayName("PRD 규칙대로 관광지명 시·군명 여행 순으로 만든다")
-    void buildsPrdRule() {
+    @DisplayName("접미어를 주면 관광지명 시·군명 접미어 순으로 만든다")
+    void buildsQueryWithSuffix() {
         assertThat(rule(true, "여행").build("경포해변", "강릉시"))
                 .isEqualTo("경포해변 강릉시 여행");
     }
