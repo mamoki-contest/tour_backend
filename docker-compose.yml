@@ -1,0 +1,73 @@
+# 로컬에서 소스를 직접 빌드해 띄우는 구성.
+# 서버(NCP)에서는 소스 없이 이미지를 받아 쓰므로 docker-compose.prod.yml 을 쓴다.
+#
+# 모든 명령에 --env-file .env.docker 를 붙인다. 이 파일 하나가
+# (1) 아래 ${...} 치환과 (2) 컨테이너 안 환경변수를 모두 공급한다.
+#
+#   docker compose --env-file .env.docker up -d --build
+
+name: tour
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: tour-db
+    restart: unless-stopped
+
+    # API 키까지 DB 컨테이너에 넣을 이유가 없어 필요한 값만 골라 넘긴다.
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      TZ: Asia/Seoul
+
+    # MySQL 8 기본 콜레이션은 utf8mb4_0900_ai_ci 라, 로컬 개발 스키마와 맞추기 위해 지정한다.
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+09:00
+
+    # 이름 있는 볼륨에 둔다. 컨테이너를 지워도 데이터가 남는다.
+    volumes:
+      - tour-db-data:/var/lib/mysql
+
+    # 컨테이너가 떠 있는 것과 MySQL 이 접속을 받는 것은 다르다.
+    # 앱이 먼저 붙으면 기동에 실패하므로 실제 접속 가능 여부를 본다.
+    # $$ 는 compose 치환을 피해 컨테이너 셸에 $ 로 전달하기 위한 것이다.
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      # 최초 기동은 데이터 디렉터리 초기화 때문에 오래 걸린다. 그동안은 실패로 세지 않는다.
+      start_period: 40s
+
+    # 호스트에 3306 을 열지 않는다. 앱은 같은 네트워크 안에서 db:3306 으로 붙는다.
+    # 로컬에서 워크벤치로 들여다보려면 아래 두 줄의 주석을 푼다(호스트 MySQL 과 겹치지 않게 3307).
+    # ports:
+    #   - "127.0.0.1:3307:3306"
+
+  app:
+    build: .
+    # docker compose build 가 이 이름으로 태그한다. 그대로 push 하면 된다.
+    image: ${DOCKERHUB_USERNAME}/tour-backend:${TAG:-latest}
+    container_name: tour-app
+    restart: unless-stopped
+
+    # DB 접속 정보와 외부 API 키를 한 파일에서 받는다. DB_HOST 는 db 여야 한다.
+    env_file: .env.docker
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      TZ: Asia/Seoul
+
+    ports:
+      - "8080:8080"
+
+    # MySQL 이 healthy 가 될 때까지 기다린다. 이게 없으면 첫 기동에서 접속 실패로 죽는다.
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  tour-db-data:

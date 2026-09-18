@@ -1,0 +1,71 @@
+# NCP 서버용. 소스를 빌드하지 않고 Docker Hub 에서 이미지를 받아 띄운다.
+#
+# 서버에 올릴 파일은 이 파일과 .env.docker 둘뿐이다. 저장소를 clone 할 필요가 없다.
+#
+#   docker compose -f docker-compose.prod.yml --env-file .env.docker pull
+#   docker compose -f docker-compose.prod.yml --env-file .env.docker up -d
+
+name: tour
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: tour-db
+    restart: unless-stopped
+
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      TZ: Asia/Seoul
+
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+09:00
+      # performance_schema 는 성능 계측 전용이다. 쓰지 않으므로 꺼서 수백 MB 를 아낀다.
+      - --performance-schema=OFF
+      # 2vCPU/4GB 기준. 서버 메모리의 1/8 정도를 잡았다. 스펙을 더 키우면 함께 올린다.
+      - --innodb-buffer-pool-size=512M
+      # 복제도 시점 복구도 쓰지 않는 단일 노드라 바이너리 로그는 디스크만 먹는다.
+      - --skip-log-bin
+
+    volumes:
+      - tour-db-data:/var/lib/mysql
+
+    # 1 vCPU 서버에서 최초 데이터 디렉터리 초기화가 3분 넘게 걸린다.
+    # start_period 안에서는 실패를 세지 않으므로 넉넉히 준다. 정상 기동 후에는
+    # 5초 간격으로 확인하므로 이 값을 늘려도 평소 배포가 느려지지 않는다.
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 300s
+
+    # 운영에서는 DB 포트를 호스트에 열지 않는다. ACG 에서도 3306 을 열지 않는다.
+
+  app:
+    # 빌드하지 않고 받아만 쓴다.
+    image: ${DOCKERHUB_USERNAME}/tour-backend:${TAG:-latest}
+    container_name: tour-app
+    restart: unless-stopped
+
+    env_file: .env.docker
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      TZ: Asia/Seoul
+      # 컨테이너 메모리 제한이 없으면 JVM 이 호스트 전체를 기준으로 힙을 잡아 MySQL 을 밀어낸다.
+      # MySQL 과 나눠 쓰도록 힙 상한을 직접 못박는다. 2vCPU/4GB 기준 값이다.
+      JAVA_OPTS: -Xms256m -Xmx1g
+
+    ports:
+      - "8080:8080"
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  tour-db-data:
