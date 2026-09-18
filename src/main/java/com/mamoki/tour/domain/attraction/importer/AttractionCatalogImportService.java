@@ -37,8 +37,13 @@ import com.mamoki.tour.infra.korservice.dto.KorServiceResponse;
 @Service
 public class AttractionCatalogImportService {
 
-    /** 한국관광공사 영역 코드. 강원. */
-    private static final String GANGWON_AREA_CODE = "32";
+    /**
+     * 법정동 시·도 코드. 강원.
+     *
+     * <p>한국관광공사 영역 코드(32)가 아니라 법정동 코드로 조회한다. 영역 코드로 거르면
+     * 공급자 데이터에서 areacode 가 비어 있는 항목이 통째로 빠지기 때문이다(#44).
+     */
+    private static final String GANGWON_LAWD_REGION_CODE = "51";
 
     private static final String OPERATION = "areaBasedList2";
 
@@ -46,7 +51,7 @@ public class AttractionCatalogImportService {
     private static final int PAGE_SIZE = 100;
 
     /**
-     * 최대 페이지 수. 강원 전체가 2,400곳 안팎이라 이 값이면 충분히 담는다.
+     * 최대 페이지 수. 강원 전체가 4,800곳 안팎이라 이 값이면 충분히 담는다.
      * 공급자가 갑자기 훨씬 많은 값을 돌려줄 때 호출이 끝없이 늘어나지 않도록 두는 상한이다.
      */
     private static final int MAX_PAGES = 50;
@@ -135,8 +140,8 @@ public class AttractionCatalogImportService {
 
         for (int pageNo = 1; pageNo <= MAX_PAGES; pageNo++) {
             KorServiceResponse response = korServiceClient.parse(OPERATION,
-                    korServiceClient.areaBasedListJson(
-                            GANGWON_AREA_CODE, null, null, pageNo, PAGE_SIZE));
+                    korServiceClient.areaBasedListByLawdJson(
+                            GANGWON_LAWD_REGION_CODE, null, null, pageNo, PAGE_SIZE));
 
             List<AttractionSnapshot> page = KorServiceItemConverter.convertAll(response.items());
             totalCount = response.totalCount();

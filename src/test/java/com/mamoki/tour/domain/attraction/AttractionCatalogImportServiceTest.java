@@ -58,7 +58,7 @@ class AttractionCatalogImportServiceTest {
         }
 
         // 첫 페이지만 내용을 주고 다음 페이지는 빈 응답을 준다. 공급자가 마지막 뒤로 주는 모양이다.
-        given(korServiceClient.areaBasedListJson(anyString(), any(), any(), anyInt(), anyInt()))
+        given(korServiceClient.areaBasedListByLawdJson(anyString(), any(), any(), anyInt(), anyInt()))
                 .willAnswer(invocation -> (int) invocation.getArgument(3) == 1 ? fixture : empty());
         given(korServiceClient.parse(anyString(), anyString()))
                 .willAnswer(invocation -> new KorServiceClient(properties())
@@ -85,6 +85,18 @@ class AttractionCatalogImportServiceTest {
         assertThat(result.inserted()).isEqualTo(result.fetched());
         assertThat(result.updated()).isZero();
         assertThat(attractionRepository.count()).isEqualTo(result.fetched());
+    }
+
+    @Test
+    @DisplayName("법정동 시·도 코드로 조회한다. 영역 코드로 거르면 areacode 가 빈 관광지가 빠진다")
+    void queriesByLawdRegionCode() {
+        importService.importAll();
+
+        Mockito.verify(korServiceClient, Mockito.atLeastOnce())
+                .areaBasedListByLawdJson(Mockito.eq("51"), Mockito.isNull(), Mockito.isNull(),
+                        anyInt(), anyInt());
+        Mockito.verify(korServiceClient, Mockito.never())
+                .areaBasedListJson(anyString(), any(), any(), anyInt(), anyInt());
     }
 
     @Test
@@ -125,7 +137,7 @@ class AttractionCatalogImportServiceTest {
     @Test
     @DisplayName("공급자가 아무것도 주지 않으면 적재하지 않는다")
     void rejectsEmptyProviderResponse() {
-        given(korServiceClient.areaBasedListJson(anyString(), any(), any(), anyInt(), anyInt()))
+        given(korServiceClient.areaBasedListByLawdJson(anyString(), any(), any(), anyInt(), anyInt()))
                 .willReturn(empty());
 
         assertThatThrownBy(() -> importService.importAll())
@@ -148,13 +160,13 @@ class AttractionCatalogImportServiceTest {
     @DisplayName("페이지를 끝까지 받고 겹쳐 온 장소는 한 번만 담는다")
     void fetchesEveryPageWithoutDuplicates() {
         // 같은 응답을 모든 페이지에 물려도 식별자로 걸러 중복이 생기지 않아야 한다.
-        given(korServiceClient.areaBasedListJson(anyString(), any(), any(), anyInt(), anyInt()))
+        given(korServiceClient.areaBasedListByLawdJson(anyString(), any(), any(), anyInt(), anyInt()))
                 .willReturn(fixture);
 
         AttractionCatalogImportResult result = importService.importAll();
 
         assertThat(attractionRepository.count()).isEqualTo(result.fetched());
         Mockito.verify(korServiceClient, Mockito.atLeast(1))
-                .areaBasedListJson(anyString(), any(), any(), anyInt(), anyInt());
+                .areaBasedListByLawdJson(anyString(), any(), any(), anyInt(), anyInt());
     }
 }
