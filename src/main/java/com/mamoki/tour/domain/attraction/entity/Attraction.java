@@ -103,4 +103,26 @@ public class Attraction extends BaseEntity {
         this.baseAt = baseAt;
         this.source = source;
     }
+
+    /**
+     * 공급자에서 다시 받아온 값으로 갱신한다.
+     *
+     * <p>{@code contentId} 는 바꾸지 않는다. 개인 컬렉션(#9)과 TMAP·입장객 매칭이 이 값을
+     * 붙들고 있어, 바뀌면 저장해 둔 장소가 끊긴다.
+     *
+     * <p>중심관광지 순위는 건드리지 않는다. 카탈로그와 적재 주기가 다른 별도 신호다.
+     */
+    public void refresh(String name, String imageUrl, String address,
+                        BigDecimal latitude, BigDecimal longitude, String contentTypeId,
+                        RegionCode regionCode, DataStatus dataStatus, LocalDateTime baseAt) {
+        this.name = name;
+        this.imageUrl = imageUrl;
+        this.address = address;
+        this.latitude = latitude;
+        this.longitude = longitude;
+        this.contentTypeId = contentTypeId;
+        this.regionCode = regionCode;
+        this.dataStatus = dataStatus;
+        this.baseAt = baseAt;
+    }
 }
