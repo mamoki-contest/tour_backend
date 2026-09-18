@@ -33,6 +33,8 @@ import com.mamoki.tour.domain.visittiming.service.VisitTimingService;
 import com.mamoki.tour.global.enums.ApiProvider;
 import com.mamoki.tour.global.enums.DataStatus;
 import com.mamoki.tour.global.exception.ExternalApiException;
+import com.mamoki.tour.global.exception.ServiceException;
+import com.mamoki.tour.global.rsdata.ResultCodes;
 import com.mamoki.tour.infra.korservice.KorServiceClient;
 import com.mamoki.tour.infra.korservice.KorServiceItemConverter;
 import com.mamoki.tour.infra.korservice.dto.KorServiceResponse;
@@ -49,8 +51,16 @@ import com.mamoki.tour.infra.korservice.dto.KorServiceResponse;
 @Service
 public class AttractionService {
 
-    /** 한국관광공사 영역 코드. 강원. */
+    /** 한국관광공사 영역 코드. 강원. 지역 매핑을 찾을 때만 쓴다. */
     private static final String GANGWON_AREA_CODE = "32";
+
+    /**
+     * 법정동 시·도 코드. 강원.
+     *
+     * <p>공급자 조회는 영역 코드가 아니라 법정동 코드로 한다. 영역 코드로 거르면 공급자
+     * 데이터에서 areacode 가 빈 항목이 통째로 빠져 남이섬·레고랜드가 목록에 나오지 않는다(#46).
+     */
+    private static final String GANGWON_LAWD_REGION_CODE = "51";
 
     private static final Duration CACHE_TTL = Duration.ofHours(24);
     private static final String OPERATION = "areaBasedList2";
@@ -243,6 +253,27 @@ public class AttractionService {
     }
 
     /**
+     * 공개 파라미터인 관광공사 시·군구 코드를 공급자에게 보낼 법정동 코드로 옮긴다.
+     *
+     * <p>프론트가 보내는 값의 의미는 그대로 두고 안에서만 바꾼다. 파라미터를 법정동 코드로
+     * 바꾸면 이미 쓰고 있는 쪽이 전부 깨진다.
+     *
+     * @return 법정동 시·군구 코드 3자리. 시·군을 지정하지 않았으면 null.
+     * @throws ServiceException 매핑이 없는 시·군구 코드인 경우. 거르지 못한 채 강원 전체를
+     *                          돌려주면 사용자가 지정한 조건이 조용히 무시된다.
+     */
+    private String toLawdSigunguCode(String sigunguCode) {
+        if (sigunguCode == null) {
+            return null;
+        }
+
+        return regionCodeRepository.findByAreaCodeAndSigunguCode(GANGWON_AREA_CODE, sigunguCode)
+                .map(region -> region.getLawdCode().substring(2))
+                .orElseThrow(() -> new ServiceException(ResultCodes.INVALID_REQUEST,
+                        "알 수 없는 시·군구 코드입니다: " + sigunguCode));
+    }
+
+    /**
      * 시·군을 지정하지 않으면 순위를 붙이지 않는다. 목록이 여러 시·군에 걸칠 때
      * 각 시·군의 내부 순위를 한 줄에 섞으면 시·군 사이의 순위처럼 읽히기 때문이다.
      */
@@ -267,14 +298,16 @@ public class AttractionService {
     }
 
     private Fetched fetchPage(AttractionSearchRequest request, int page, int size) {
-        String requestKey = korServiceClient.areaBasedListKey(
-                GANGWON_AREA_CODE, request.sigunguCode(), request.contentTypeId(), page, size);
+        String lawdSigunguCode = toLawdSigunguCode(request.sigunguCode());
+
+        String requestKey = korServiceClient.areaBasedListByLawdKey(
+                GANGWON_LAWD_REGION_CODE, lawdSigunguCode, request.contentTypeId(), page, size);
 
         CachedResponse cached = cacheService.fetch(
                 ApiProvider.KOR_SERVICE2,
                 requestKey,
-                () -> korServiceClient.areaBasedListJson(
-                        GANGWON_AREA_CODE, request.sigunguCode(), request.contentTypeId(), page, size),
+                () -> korServiceClient.areaBasedListByLawdJson(
+                        GANGWON_LAWD_REGION_CODE, lawdSigunguCode, request.contentTypeId(), page, size),
                 CACHE_TTL);
 
         if (!cached.hasBody()) {

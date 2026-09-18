@@ -18,8 +18,9 @@ import lombok.NoArgsConstructor;
  * <p>공급자마다 지역을 가리키는 코드 체계가 달라, 법정동 코드를 기준으로 관광공사
  * 영역 코드를 이어 붙인다.
  *
- * <p>sigunguCode 는 KorService2 의 areaCode2 조회로 확인해야 하는 값이라 아직 비어 있다.
- * 임의 값으로 채우지 않고 API 키 발급 후 채운다.
+ * <p>sigunguCode 는 KorService2 의 areaCode2 조회로 확인해 시드에 채워 두었다.
+ * 조회는 법정동 코드로 하고(#44, #46), 이 값은 공개 API 가 받는 파라미터를 법정동
+ * 코드로 옮길 때 쓴다.
  */
 @Entity
 @Getter
@@ -39,7 +40,7 @@ public class RegionCode extends BaseEntity {
     @Column(name = "area_code", nullable = false, length = 5)
     private String areaCode;
 
-    /** 한국관광공사 시·군구 코드. 미확인 상태를 구분해야 하므로 nullable 로 둔다. */
+    /** 한국관광공사 시·군구 코드. 확인되지 않은 지역을 구분해야 하므로 nullable 로 둔다. */
     @Column(name = "sigungu_code", length = 5)
     private String sigunguCode;
 
