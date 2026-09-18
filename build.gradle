@@ -23,6 +23,8 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.0'
 	implementation 'org.apache.commons:commons-csv:1.14.0'
+	// 관광지식정보시스템 입장객 통계가 레거시 XLS(OLE2) 로 내려온다. HSSF 만 있으면 되어 poi-ooxml 은 넣지 않는다.
+	implementation 'org.apache.poi:poi:5.4.1'
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'com.mysql:mysql-connector-j'
 	annotationProcessor 'org.projectlombok:lombok'
