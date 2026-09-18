@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import com.mamoki.tour.domain.currentaccess.dto.CurrentAccessView;
 import com.mamoki.tour.domain.relatedplace.dto.RelatedPlacesView;
 import com.mamoki.tour.domain.visittiming.dto.DailyVisitTiming;
 import com.mamoki.tour.domain.visittiming.dto.VisitTiming;
@@ -85,6 +86,12 @@ public record AttractionDetailResponse(
                 지원 범위 30일의 하루치 판정. 날짜 오름차순입니다.
                 집중률 원본값은 담지 않습니다. 값을 노출하면 장소 사이의 절대 순위를 만들 수 있습니다.""")
         List<DailyVisitTiming> dailyForecast,
+
+        @Schema(description = """
+                현재 접근 혼잡. 지금 그 관광지까지 가는 길의 도로·주차 여건입니다.
+                위의 visitTiming(미래 방문 혼잡도 예측)과는 다른 신호이며,
+                관광지 내부에 사람이 얼마나 있는지를 뜻하지 않습니다.""")
+        CurrentAccessView currentAccess,
 
         @Schema(description = """
                 대체지 후보. 원래 장소가 아닌 관광지 중 유효한 방문 혼잡도 예측을 가진 곳만 담깁니다.

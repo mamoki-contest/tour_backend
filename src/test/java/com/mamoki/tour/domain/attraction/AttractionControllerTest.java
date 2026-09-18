@@ -29,6 +29,9 @@ import com.mamoki.tour.domain.attraction.service.AttractionService;
 import com.mamoki.tour.domain.attraction.dto.OnlineMentionView;
 import com.mamoki.tour.domain.attraction.dto.TmapRankView;
 import com.mamoki.tour.domain.attraction.dto.VisitorStatsView;
+import com.mamoki.tour.domain.currentaccess.dto.CurrentAccessView;
+import com.mamoki.tour.domain.currentaccess.dto.ParkingView;
+import com.mamoki.tour.domain.currentaccess.dto.RoadFlowView;
 import com.mamoki.tour.domain.relatedplace.dto.RelatedPlace;
 import com.mamoki.tour.domain.relatedplace.dto.RelatedPlacesView;
 import com.mamoki.tour.domain.relatedplace.enums.RelatedPlaceKind;
@@ -364,6 +367,8 @@ class AttractionControllerTest {
                 timing(),
                 List.of(new DailyVisitTiming(LocalDate.of(2026, 9, 8), VisitTimingStatus.LOW),
                         new DailyVisitTiming(LocalDate.of(2026, 9, 9), VisitTimingStatus.HIGH)),
+                new CurrentAccessView(RoadFlowView.noData(), ParkingView.noData(),
+                        LocalDateTime.of(2026, 9, 8, 3, 0), "국가교통정보센터"),
                 alternatives, companions);
     }
 
