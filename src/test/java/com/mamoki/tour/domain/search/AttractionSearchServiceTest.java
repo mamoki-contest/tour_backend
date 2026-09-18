@@ -67,7 +67,7 @@ class AttractionSearchServiceTest {
                     return snapshots.stream()
                             .map(snapshot -> AttractionResponse.of(snapshot, null, null,
                                     OnlineMentionView.notCollected(null),
-                                    TmapRankView.notAvailable(), null))
+                                    TmapRankView.notAvailable(), null, null))
                             .toList();
                 });
 

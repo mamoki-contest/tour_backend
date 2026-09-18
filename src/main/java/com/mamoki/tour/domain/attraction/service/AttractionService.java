@@ -20,6 +20,7 @@ import com.mamoki.tour.domain.attraction.dto.AttractionSnapshot;
 import com.mamoki.tour.domain.attraction.dto.AttractionSort;
 import com.mamoki.tour.domain.attraction.dto.OnlineMentionView;
 import com.mamoki.tour.domain.attraction.dto.TmapRankView;
+import com.mamoki.tour.domain.attraction.dto.VisitorStatsView;
 import com.mamoki.tour.domain.attraction.support.AttractionSortOrder;
 import com.mamoki.tour.domain.attraction.support.MapBounds;
 import com.mamoki.tour.domain.cache.dto.CachedResponse;
@@ -196,6 +197,8 @@ public class AttractionService {
         Optional<Map<String, OnlineMentionView>> mentions =
                 signalLookupService.findOnlineMentions(contentIds);
         Map<String, TmapRankView> tmapRanks = signalLookupService.findTmapRanks(contentIds);
+        Optional<Map<String, VisitorStatsView>> visitorStats =
+                signalLookupService.findVisitorStats(contentIds);
 
         String ruleVersion = signalLookupService.findMentionRuleVersion().orElse(null);
 
@@ -210,8 +213,23 @@ public class AttractionService {
                         centerRanks.get(snapshot.contentId()),
                         mentionView(mentions, snapshot.contentId(), ruleVersion),
                         tmapRanks.getOrDefault(snapshot.contentId(), TmapRankView.notAvailable()),
+                        visitorStatsView(visitorStats, snapshot.contentId()),
                         visitTimings.get(snapshot.contentId())))
                 .toList();
+    }
+
+    /**
+     * 스냅샷이 없으면 아직 적재하지 않은 것이고, 스냅샷은 있는데 그 장소가 없으면 통계에
+     * 없거나 공표월에 집계되지 않은 것이다. 둘 다 0 명이 아니다.
+     */
+    private static VisitorStatsView visitorStatsView(Optional<Map<String, VisitorStatsView>> stats,
+                                                     String contentId) {
+        if (stats.isEmpty()) {
+            return VisitorStatsView.notImported();
+        }
+
+        return stats.get().getOrDefault(contentId,
+                new VisitorStatsView(VisitorStatsView.Status.NOT_REGISTERED, null, null, null));
     }
 
     /** 스냅샷 자체가 없으면 값이 아니라 아직 수집하지 않았다는 사실을 전달한다. */

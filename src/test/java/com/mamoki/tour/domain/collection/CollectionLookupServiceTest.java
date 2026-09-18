@@ -72,7 +72,7 @@ class CollectionLookupServiceTest {
 
             return snapshots.stream()
                     .map(snapshot -> AttractionResponse.of(snapshot, "강릉시", null,
-                            OnlineMentionView.notCollected(null), TmapRankView.notAvailable(), null))
+                            OnlineMentionView.notCollected(null), TmapRankView.notAvailable(), null, null))
                     .toList();
         });
 

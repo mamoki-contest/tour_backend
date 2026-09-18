@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.mamoki.tour.domain.attraction.dto.OnlineMentionView;
 import com.mamoki.tour.domain.attraction.dto.TmapRankView;
+import com.mamoki.tour.domain.attraction.dto.VisitorStatsView;
 import com.mamoki.tour.domain.mention.entity.OnlineMentionEntry;
 import com.mamoki.tour.domain.mention.entity.OnlineMentionSnapshot;
 import com.mamoki.tour.domain.mention.repository.OnlineMentionEntryRepository;
@@ -18,6 +19,10 @@ import com.mamoki.tour.domain.tmaprank.entity.TmapRankEntry;
 import com.mamoki.tour.domain.tmaprank.entity.TmapRankSnapshot;
 import com.mamoki.tour.domain.tmaprank.repository.TmapRankEntryRepository;
 import com.mamoki.tour.domain.tmaprank.repository.TmapRankSnapshotRepository;
+import com.mamoki.tour.domain.visitorstats.entity.VisitorStatsEntry;
+import com.mamoki.tour.domain.visitorstats.entity.VisitorStatsSnapshot;
+import com.mamoki.tour.domain.visitorstats.repository.VisitorStatsEntryRepository;
+import com.mamoki.tour.domain.visitorstats.repository.VisitorStatsSnapshotRepository;
 import com.mamoki.tour.global.enums.SnapshotStatus;
 import com.mamoki.tour.global.enums.TmapRankStatus;
 
@@ -35,15 +40,21 @@ public class SignalLookupService {
     private final OnlineMentionEntryRepository mentionEntryRepository;
     private final TmapRankSnapshotRepository tmapSnapshotRepository;
     private final TmapRankEntryRepository tmapEntryRepository;
+    private final VisitorStatsSnapshotRepository visitorStatsSnapshotRepository;
+    private final VisitorStatsEntryRepository visitorStatsEntryRepository;
 
     public SignalLookupService(OnlineMentionSnapshotRepository mentionSnapshotRepository,
                                OnlineMentionEntryRepository mentionEntryRepository,
                                TmapRankSnapshotRepository tmapSnapshotRepository,
-                               TmapRankEntryRepository tmapEntryRepository) {
+                               TmapRankEntryRepository tmapEntryRepository,
+                               VisitorStatsSnapshotRepository visitorStatsSnapshotRepository,
+                               VisitorStatsEntryRepository visitorStatsEntryRepository) {
         this.mentionSnapshotRepository = mentionSnapshotRepository;
         this.mentionEntryRepository = mentionEntryRepository;
         this.tmapSnapshotRepository = tmapSnapshotRepository;
         this.tmapEntryRepository = tmapEntryRepository;
+        this.visitorStatsSnapshotRepository = visitorStatsSnapshotRepository;
+        this.visitorStatsEntryRepository = visitorStatsEntryRepository;
     }
 
     /**
@@ -108,5 +119,39 @@ public class SignalLookupService {
         }
 
         return views;
+    }
+    /**
+     * 활성 입장객통계 스냅샷에서 공표월 입장객 수를 찾는다.
+     *
+     * @return 스냅샷이 아직 없으면 빈 값. 값을 못 얻은 것과 아직 적재하지 않은 것을 구분하기
+     *         위해 Optional 로 돌려준다.
+     */
+    @Transactional(readOnly = true)
+    public Optional<Map<String, VisitorStatsView>> findVisitorStats(Collection<String> contentIds) {
+        Optional<VisitorStatsSnapshot> active =
+                visitorStatsSnapshotRepository.findByStatus(SnapshotStatus.ACTIVE);
+
+        if (active.isEmpty()) {
+            return Optional.empty();
+        }
+
+        if (contentIds.isEmpty()) {
+            return Optional.of(Map.of());
+        }
+
+        VisitorStatsSnapshot snapshot = active.get();
+        Map<String, VisitorStatsView> views = new HashMap<>();
+
+        for (VisitorStatsEntry entry
+                : visitorStatsEntryRepository.findMatchedByContentIds(snapshot, contentIds)) {
+
+            views.put(entry.getContentId(), new VisitorStatsView(
+                    VisitorStatsView.Status.AVAILABLE,
+                    entry.getVisitorCount(),
+                    snapshot.getPublishedMonth(),
+                    snapshot.getCountStatus().name()));
+        }
+
+        return Optional.of(views);
     }
 }

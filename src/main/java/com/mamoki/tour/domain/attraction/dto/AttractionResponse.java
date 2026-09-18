@@ -70,17 +70,17 @@ public record AttractionResponse(
 ) {
 
     public static AttractionResponse of(AttractionSnapshot snapshot, String regionName) {
-        return of(snapshot, regionName, null, null, null, null);
+        return of(snapshot, regionName, null, null, null, null, null);
     }
 
     public static AttractionResponse of(AttractionSnapshot snapshot, String regionName, Integer centerRank) {
-        return of(snapshot, regionName, centerRank, null, null, null);
+        return of(snapshot, regionName, centerRank, null, null, null, null);
     }
 
     public static AttractionResponse of(AttractionSnapshot snapshot, String regionName,
                                         Integer centerRank, OnlineMentionView onlineMention,
                                         TmapRankView tmapRank) {
-        return of(snapshot, regionName, centerRank, onlineMention, tmapRank, null);
+        return of(snapshot, regionName, centerRank, onlineMention, tmapRank, null, null);
     }
 
     /**
@@ -91,7 +91,8 @@ public record AttractionResponse(
      */
     public static AttractionResponse of(AttractionSnapshot snapshot, String regionName,
                                         Integer centerRank, OnlineMentionView onlineMention,
-                                        TmapRankView tmapRank, VisitTiming visitTiming) {
+                                        TmapRankView tmapRank, VisitorStatsView visitorStats,
+                                        VisitTiming visitTiming) {
         return new AttractionResponse(
                 snapshot.contentId(),
                 snapshot.name(),
@@ -106,7 +107,7 @@ public record AttractionResponse(
                 snapshot.baseAt(),
                 onlineMention,
                 tmapRank == null ? TmapRankView.notAvailable() : tmapRank,
-                VisitorStatsView.notImported(),
+                visitorStats == null ? VisitorStatsView.notImported() : visitorStats,
                 visitTiming
         );
     }
