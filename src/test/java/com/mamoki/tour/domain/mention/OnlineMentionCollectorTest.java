@@ -119,6 +119,24 @@ class OnlineMentionCollectorTest {
                 .build());
     }
 
+    /**
+     * 시·군 기준 언급량을 관광지 값보다 훨씬 크게 둔다.
+     *
+     * <p>이 테스트들이 보는 것은 변별력 판정이 아니다. 기준을 크게 두면 모든 장소가
+     * 판정을 통과해, 각 테스트가 보려는 동작만 남는다.
+     */
+    private void givenPlaceTotal(long placeTotal) {
+        given(searchClient.search(anyString())).willAnswer(invocation -> {
+            String query = invocation.getArgument(0);
+            boolean isRegionBaseline = REGION_NAMES.contains(query.trim());
+
+            return response(isRegionBaseline ? Math.max(placeTotal, 1L) * 1_000L : placeTotal);
+        });
+    }
+
+    private static final java.util.Set<String> REGION_NAMES =
+            java.util.Set.of("강릉시", "속초시", "춘천시", "정선군", "원주시");
+
     private NaverBlogSearchResponse response(long total) {
         return new NaverBlogSearchResponse("now", total, 1, 1, List.of());
     }
@@ -128,7 +146,7 @@ class OnlineMentionCollectorTest {
     void collectsAndActivates() {
         save("1", "경포해변", "51150");
         save("2", "속초해변", "51210");
-        given(searchClient.search(anyString())).willReturn(response(1000L));
+        givenPlaceTotal(1000L);
 
         OnlineMentionCollectResult result = collector.collect(MONTH);
 
@@ -143,7 +161,7 @@ class OnlineMentionCollectorTest {
     @DisplayName("실제 사용한 검색어와 값을 함께 남긴다")
     void keepsQueryAndTotal() {
         save("1", "경포해변", "51150");
-        given(searchClient.search(anyString())).willReturn(response(140006L));
+        givenPlaceTotal(140006L);
 
         collector.collect(MONTH);
 
@@ -160,7 +178,7 @@ class OnlineMentionCollectorTest {
     @DisplayName("정상 0건은 수집 성공으로 다룬다")
     void zeroTotalIsStillCollected() {
         save("1", "이름없는어느곳", "51150");
-        given(searchClient.search(anyString())).willReturn(response(0L));
+        givenPlaceTotal(0L);
 
         OnlineMentionCollectResult result = collector.collect(MONTH);
 
@@ -172,12 +190,82 @@ class OnlineMentionCollectorTest {
         });
     }
 
+    /**
+     * 시·군 단독 검색과 관광지 검색을 다르게 답하게 한다.
+     *
+     * <p>수집기는 시·군당 한 번 기준을 재고, 그 뒤 관광지마다 검색한다. 두 호출을 검색어로
+     * 구분해야 실제 동작과 같은 모양이 된다.
+     */
+    private void givenRegionBaseline(long baseline, long placeTotal) {
+        given(searchClient.search(anyString())).willAnswer(invocation -> {
+            String query = invocation.getArgument(0);
+            return response(query.trim().equals("강릉시") ? baseline : placeTotal);
+        });
+    }
+
+    @Test
+    @DisplayName("이름이 지역 전체 언급량과 구분되지 않으면 모호로 표시한다")
+    void marksIndistinguishableNameAmbiguous() {
+        save("1", "곳", "51150");
+        // 기준 1,000,000 의 10% 인 100,000 을 넘으므로 그 장소의 값으로 볼 수 없다.
+        givenRegionBaseline(1_000_000L, 500_000L);
+
+        OnlineMentionCollectResult result = collector.collect(MONTH);
+
+        assertThat(result.ambiguous()).isEqualTo(1);
+        assertThat(result.collected()).isZero();
+        assertThat(entryRepository.findAll()).singleElement().satisfies(entry -> {
+            assertThat(entry.getStatus()).isEqualTo(MentionStatus.AMBIGUOUS);
+            assertThat(entry.getMentionTotal()).isNull();
+            assertThat(entry.isSortable()).isFalse();
+            assertThat(entry.getNote()).contains("지역 전체");
+        });
+    }
+
+    @Test
+    @DisplayName("지역 전체와 충분히 구분되면 그대로 수집한다")
+    void keepsDistinguishableName() {
+        save("1", "경포해변", "51150");
+        // 기준의 4.2%. 실측에서 실제 관광지가 보인 수준이다.
+        givenRegionBaseline(1_000_000L, 42_000L);
+
+        OnlineMentionCollectResult result = collector.collect(MONTH);
+
+        assertThat(result.collected()).isEqualTo(1);
+        assertThat(entryRepository.findAll()).singleElement().satisfies(entry -> {
+            assertThat(entry.getStatus()).isEqualTo(MentionStatus.COLLECTED);
+            assertThat(entry.getMentionTotal()).isEqualTo(42_000L);
+        });
+    }
+
+    @Test
+    @DisplayName("시·군 기준을 얻지 못하면 판정하지 않고 기존대로 수집한다")
+    void skipsJudgementWithoutBaseline() {
+        save("1", "곳", "51150");
+        given(searchClient.search(anyString())).willAnswer(invocation -> {
+            String query = invocation.getArgument(0);
+
+            if (query.trim().equals("강릉시")) {
+                throw new ExternalApiException(ApiProvider.NAVER_BLOG_SEARCH, "기준 조회 실패");
+            }
+
+            return response(500_000L);
+        });
+
+        OnlineMentionCollectResult result = collector.collect(MONTH);
+
+        // 근거가 없으면 빼지 않는다. 판정 불가와 변별력 없음은 다르다.
+        assertThat(result.collected()).isEqualTo(1);
+        assertThat(entryRepository.findAll()).singleElement().satisfies(entry ->
+                assertThat(entry.getStatus()).isEqualTo(MentionStatus.COLLECTED));
+    }
+
     @Test
     @DisplayName("TMAP 순위에 있는데 0건이면 모호로 표시하고 정렬에서 뺀다")
     void marksVerifiedZeroAsAmbiguous() {
         save("1", "강원랜드카지노", "51770");
         saveActiveTmapRank("1", "강원랜드카지노");
-        given(searchClient.search(anyString())).willReturn(response(0L));
+        givenPlaceTotal(0L);
 
         OnlineMentionCollectResult result = collector.collect(MONTH);
 
@@ -195,7 +283,7 @@ class OnlineMentionCollectorTest {
     void keepsNonZeroTotalForRankedPlace() {
         save("1", "경포해변", "51150");
         saveActiveTmapRank("1", "경포해변");
-        given(searchClient.search(anyString())).willReturn(response(140006L));
+        givenPlaceTotal(140006L);
 
         OnlineMentionCollectResult result = collector.collect(MONTH);
 
@@ -211,7 +299,7 @@ class OnlineMentionCollectorTest {
     void keepsUnrankedZeroSortable() {
         save("1", "이름없는어느곳", "51150");
         saveActiveTmapRank("2", "다른곳");
-        given(searchClient.search(anyString())).willReturn(response(0L));
+        givenPlaceTotal(0L);
 
         OnlineMentionCollectResult result = collector.collect(MONTH);
 
@@ -228,7 +316,7 @@ class OnlineMentionCollectorTest {
     void marksDuplicateNamesAmbiguous() {
         save("1", "해수욕장", "51150");
         save("2", "해수욕장", "51210");
-        given(searchClient.search(anyString())).willReturn(response(500L));
+        givenPlaceTotal(500L);
 
         OnlineMentionCollectResult result = collector.collect(MONTH);
 
@@ -276,7 +364,7 @@ class OnlineMentionCollectorTest {
     @DisplayName("일부 호출이 끝내 실패하면 부분 수집분을 남기지 않고 직전 스냅샷을 지킨다")
     void keepsPreviousSnapshotOnPartialFailure() {
         save("1", "경포해변", "51150");
-        given(searchClient.search(anyString())).willReturn(response(100L));
+        givenPlaceTotal(100L);
         OnlineMentionCollectResult previous = collector.collect(MONTH);
 
         save("2", "속초해변", "51210");
@@ -315,7 +403,7 @@ class OnlineMentionCollectorTest {
     @DisplayName("다시 수집하면 직전 스냅샷은 물러나고 활성은 하나만 남는다")
     void replacesActiveSnapshot() {
         save("1", "경포해변", "51150");
-        given(searchClient.search(anyString())).willReturn(response(100L));
+        givenPlaceTotal(100L);
 
         OnlineMentionCollectResult first = collector.collect(MONTH);
         OnlineMentionCollectResult second = collector.collect(MONTH);
