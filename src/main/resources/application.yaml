@@ -126,6 +126,13 @@ tour:
         # 되돌리려면 NAVER_QUERY_SUFFIX 에 값을 준다. 규칙이 바뀌면 queryRuleVersion 도
         # 함께 바뀌므로 어느 규칙으로 수집한 스냅샷인지는 그대로 추적된다.
         suffix: ${NAVER_QUERY_SUFFIX:}
+        # 이름이 변별력을 잃었다고 볼 기준. 이름+시·군 검색 결과가 시·군 단독 검색 결과의
+        # 이 비율을 넘으면 그 장소의 언급량으로 볼 수 없다고 보고 정렬에서 뺀다.
+        #
+        # 강릉으로 실측한 값이다. 일반명사는 '곳' 49.9%, '더원' 20.3%, '커피다' 19.2% 였고
+        # 실제 관광지는 안목해변 4.6%, 경포해변 4.2%, 오죽헌 2.0% 였다. 사이가 네 배 벌어져
+        # 있어 그 안 어디에 선을 그어도 갈린다.
+        ambiguous-ratio: ${NAVER_AMBIGUOUS_RATIO:0.10}
   cors:
     # Vercel 배포 출처만 허용한다. 쉼표로 구분해 환경변수로 주입한다.
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}

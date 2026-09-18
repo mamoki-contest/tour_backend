@@ -51,6 +51,16 @@ public class SearchQueryRule {
         return query.toString();
     }
 
+    /**
+     * 이름이 변별력을 잃었다고 볼 기준.
+     *
+     * <p>이름+시·군 검색 결과가 시·군 단독 검색 결과의 이 비율을 넘으면 그 장소의 언급량으로
+     * 볼 수 없다. 검색어를 만드는 규칙과 같은 설정에 두어 함께 움직이게 한다.
+     */
+    public double ambiguousRatio() {
+        return properties.ambiguousRatio();
+    }
+
     /** 규칙에서 직접 만든 버전. 규칙을 바꾸면 버전도 함께 바뀐다. */
     public String version() {
         StringBuilder version = new StringBuilder("name");

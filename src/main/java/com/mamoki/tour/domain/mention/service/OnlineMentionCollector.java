@@ -90,8 +90,13 @@ public class OnlineMentionCollector {
         List<OnlineMentionEntry> buffer = new ArrayList<>(SAVE_CHUNK);
 
         try {
+            // 스냅샷을 만든 뒤에 부른다. 여기서 인증이나 한도로 멈추더라도 무엇이 왜 실패했는지
+            // 이력으로 남아야 한다.
+            Map<String, Long> regionBaselines = collectRegionBaselines(catalog);
+
             for (Attraction attraction : catalog) {
-                OnlineMentionEntry entry = collectOne(snapshot, attraction, nameCounts, tmapRanked);
+                OnlineMentionEntry entry =
+                        collectOne(snapshot, attraction, nameCounts, tmapRanked, regionBaselines);
                 buffer.add(entry);
 
                 switch (entry.getStatus()) {
@@ -126,7 +131,8 @@ public class OnlineMentionCollector {
     }
 
     private OnlineMentionEntry collectOne(OnlineMentionSnapshot snapshot, Attraction attraction,
-                                          Map<String, Integer> nameCounts, Set<String> tmapRanked) {
+                                          Map<String, Integer> nameCounts, Set<String> tmapRanked,
+                                          Map<String, Long> regionBaselines) {
 
         String query = queryRule.build(attraction.getName(), regionName(attraction));
 
@@ -146,6 +152,14 @@ public class OnlineMentionCollector {
 
         Long total = searchWithRetry(query);
 
+        // 이름에 시·군을 붙였는데도 지역 전체 언급량과 구분되지 않으면 그 장소의 값이 아니다.
+        Long baseline = regionBaselines.get(regionName(attraction));
+
+        if (isIndistinguishableFromRegion(total, baseline)) {
+            return entry(snapshot, attraction, query, null, MentionStatus.AMBIGUOUS,
+                    "이름이 지역 전체 언급량과 구분되지 않습니다. %d / 기준 %d".formatted(total, baseline));
+        }
+
         // 검색되는 장소인데 0 건이면 표기가 달라 못 찾은 것이다. 그 0 을 언급량으로 저장하지 않는다.
         if (total != null && total == 0L && tmapRanked.contains(attraction.getContentId())) {
             return entry(snapshot, attraction, query, total, MentionStatus.AMBIGUOUS,
@@ -153,6 +167,51 @@ public class OnlineMentionCollector {
         }
 
         return entry(snapshot, attraction, query, total, MentionStatus.COLLECTED, null);
+    }
+
+    /**
+     * 시·군 이름만으로 검색한 기준 언급량.
+     *
+     * <p>이름이 일반명사에 가까우면 시·군을 붙여도 결과가 거의 줄지 않는다. `곳 강릉시` 는
+     * 강릉시 단독 검색의 49.9% 였고, 실제 관광지인 경포해변은 4.2% 였다. 그 차이로 가른다.
+     *
+     * <p>시·군당 한 번만 부른다. 관광지마다 부르면 호출이 두 배가 된다.
+     *
+     * @return 시·군명 → 기준 언급량. 호출에 실패한 시·군은 담기지 않아 판정을 건너뛴다.
+     */
+    private Map<String, Long> collectRegionBaselines(List<Attraction> catalog) {
+        Map<String, Long> baselines = new HashMap<>();
+
+        for (Attraction attraction : catalog) {
+            String region = regionName(attraction);
+
+            if (region == null || baselines.containsKey(region)) {
+                continue;
+            }
+
+            try {
+                sleepBetweenCalls();
+                baselines.put(region, searchClient.search(region).total());
+            } catch (NaverAuthenticationException | NaverRateLimitException e) {
+                throw e;
+            } catch (RuntimeException e) {
+                // 기준을 얻지 못한 시·군은 판정하지 않는다. 근거 없이 정렬에서 빼지 않는다.
+                log.warn("시·군 기준 언급량을 얻지 못해 판정을 건너뜁니다. region={}", region, e);
+            }
+        }
+
+        log.info("시·군 기준 언급량 수집: {}곳", baselines.size());
+
+        return baselines;
+    }
+
+    /** 기준을 모르면 판정하지 않는다. 판정 근거가 없는 것과 변별력이 없는 것은 다르다. */
+    private boolean isIndistinguishableFromRegion(Long total, Long baseline) {
+        if (total == null || baseline == null || baseline <= 0) {
+            return false;
+        }
+
+        return total >= baseline * queryRule.ambiguousRatio();
     }
 
     /**

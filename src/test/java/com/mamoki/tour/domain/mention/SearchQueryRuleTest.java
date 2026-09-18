@@ -11,7 +11,7 @@ import com.mamoki.tour.domain.mention.support.SearchQueryRuleProperties;
 class SearchQueryRuleTest {
 
     private SearchQueryRule rule(boolean includeSigungu, String suffix) {
-        return new SearchQueryRule(new SearchQueryRuleProperties(includeSigungu, suffix));
+        return new SearchQueryRule(new SearchQueryRuleProperties(includeSigungu, suffix, 0.10));
     }
 
     @Test
