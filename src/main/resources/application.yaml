@@ -106,8 +106,15 @@ tour:
         # 동명 장소를 가르기 위해 시·군명을 넣는다.
         include-sigungu: true
         # 검색어 뒤에 붙일 말. 비우면 붙이지 않는다.
-        # PRD 는 '여행'을 명시하지만, 장소 성격에 따라 결과가 크게 줄어 재검토 중이다.
-        suffix: ${NAVER_QUERY_SUFFIX:여행}
+        #
+        # PRD v4 는 '여행'을 명시했으나 팀 논의(#33)로 빼기로 했다. 네이버 검색이 AND 라
+        # 붙이는 순간 그 말과 함께 쓰이지 않은 글이 전부 빠지는데, 빠지는 폭이 장소 성격에
+        # 따라 크게 다르다. 사찰인 낙산사는 5.2배, 오봉저수지는 123배 줄었다. 그러면
+        # 실제 언급량이 아니라 여행 맥락에서 언급된 양을 재게 되어 정렬 지표로 쓸 수 없다.
+        #
+        # 되돌리려면 NAVER_QUERY_SUFFIX 에 값을 준다. 규칙이 바뀌면 queryRuleVersion 도
+        # 함께 바뀌므로 어느 규칙으로 수집한 스냅샷인지는 그대로 추적된다.
+        suffix: ${NAVER_QUERY_SUFFIX:}
   cors:
     # Vercel 배포 출처만 허용한다. 쉼표로 구분해 환경변수로 주입한다.
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
