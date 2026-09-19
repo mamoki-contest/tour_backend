@@ -32,13 +32,19 @@ public interface AttractionRepository extends JpaRepository<Attraction, Long> {
     List<Attraction> findAllWithRegionByLawdCode(String lawdCode);
 
     /**
-     * 카탈로그를 마지막으로 적재한 시각. 한 건도 없으면 null.
+     * 카탈로그 내용이 마지막으로 바뀐 시각. 한 건도 없으면 null.
+     *
+     * <p><b>적재를 실행한 시각이 아니다.</b> {@code modifiedAt} 은 행이 실제로 바뀔 때만
+     * 움직이는 감사 필드라, 공급자 내용이 그대로인 재적재는 이 값을 밀지 않는다. 오늘
+     * 재적재를 돌려도 내용이 같으면 지난달 시각이 그대로 나온다. 그것이 틀린 값은 아니다
+     * — 사용자가 보는 데이터가 실제로 그때 것이기 때문이다. 다만 "언제 돌렸는지" 를
+     * 묻는 데 쓰면 안 된다. 그 물음에 답하려면 적재 실행 이력을 따로 남겨야 한다.
      *
      * <p>카탈로그가 비어 있는지 판단하는 데도 같이 쓴다. `조건에 맞는 장소가 없음`과
      * `카탈로그를 아직 적재하지 않음`은 다르게 다뤄야 한다(#51).
      */
     @Query("select max(a.modifiedAt) from Attraction a")
-    LocalDateTime findLatestImportedAt();
+    LocalDateTime findLatestCatalogChangeAt();
 
     /** 개인 컬렉션 재조회(#9)가 사용하는 배치 조회. */
     List<Attraction> findAllByContentIdIn(Collection<String> contentIds);

@@ -112,17 +112,17 @@ class AttractionRepositoryTest {
     }
 
     @Test
-    @DisplayName("카탈로그를 마지막으로 적재한 시각을 돌려주고, 비어 있으면 null 이다")
-    void findLatestImportedAt() {
+    @DisplayName("카탈로그 내용이 마지막으로 바뀜 시각을 돌려주고, 비어 있으면 null 이다")
+    void findLatestCatalogChangeAt() {
         attractionRepository.deleteAll();
         attractionRepository.flush();
 
-        assertThat(attractionRepository.findLatestImportedAt()).isNull();
+        assertThat(attractionRepository.findLatestCatalogChangeAt()).isNull();
 
         RegionCode gangneung = regionCodeRepository.findByLawdCode("51150").orElseThrow();
         attractionRepository.saveAndFlush(attraction("30", "오죽헌", gangneung, null, null));
 
-        assertThat(attractionRepository.findLatestImportedAt()).isNotNull();
+        assertThat(attractionRepository.findLatestCatalogChangeAt()).isNotNull();
     }
 
     private Attraction attraction(String contentId, String name, RegionCode regionCode,
