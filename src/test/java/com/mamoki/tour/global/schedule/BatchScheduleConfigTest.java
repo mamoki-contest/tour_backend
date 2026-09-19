@@ -111,6 +111,24 @@ class BatchScheduleConfigTest {
         });
     }
 
+    /**
+     * 실제 컨텍스트로 붙이는 {@code BatchScheduleWiringTest} 는 테스트가 매월 1일 새벽에
+     * 돌아 진짜 수집이 나가는 일을 막으려고 cron 을 오지 않는 날짜로 덮는다. 그래서 기본
+     * cron 이 실제로 등록되는지는 진짜 호출이 나갈 수 없는 여기서 본다.
+     */
+    @Test
+    @DisplayName("cron 을 주지 않으면 기본 cron 으로 등록된다")
+    void registersDefaultCronWhenNoneGiven() {
+        runner.withPropertyValues(
+                "tour.batch.schedule.mention.enabled=true",
+                "tour.batch.schedule.catalog.enabled=true"
+        ).run(context -> assertThat(scheduledTasks(context))
+                .map(task -> ((CronTask) task.getTask()).getExpression())
+                .containsExactlyInAnyOrder(
+                        BatchScheduleProperties.DEFAULT_MENTION_CRON,
+                        BatchScheduleProperties.DEFAULT_CATALOG_CRON));
+    }
+
     @Test
     @DisplayName("시간대를 주지 않으면 Asia/Seoul 로 등록된다")
     void defaultsToSeoulZone() {

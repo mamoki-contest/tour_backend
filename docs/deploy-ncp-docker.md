@@ -531,6 +531,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.docker logs app | grep
 | 브라우저에서 8080 이 안 열린다 | ACG 인바운드 8080, 그리고 `docker compose ps` |
 | 날짜 판정이 하루 밀린다 | 컨테이너 안 `date` 가 KST인지. `docker compose exec app date` |
 | 컨테이너가 OOM 으로 죽는다 | 서버 메모리. 4GB 미만이면 MySQL+JVM이 빠듯합니다 |
+| 스케줄을 켠 뒤 앱이 아예 뜨지 않는다 | cron 형식이나 시간대 이름이 틀리면 기동 자체가 막힙니다. `BATCH_SCHEDULE_*_CRON` 은 Spring cron **6자리**(`0 0 3 1 * *`), `BATCH_SCHEDULE_ZONE` 은 IANA 시간대 이름(`Asia/Seoul`, `KST` 아님)이어야 합니다. `logs app` 첫 화면에서 확인하세요 |
 | 스케줄을 켰는데 기동 로그에 등록 줄이 없다 | `.env.docker` 의 `BATCH_SCHEDULE_..._ENABLED` 가 `true` 인지. 설정 파일만 고쳤다면 `up -d --force-recreate app` 으로 컨테이너를 다시 만들어야 합니다 |
 | 스케줄이 돌 시각이 지났는데 수집이 없다 | `online_mention_snapshot` 에 `IMPORTING` 이 남아 있으면 건너뜁니다(8-4). 컨테이너 시간대도 확인: `exec app date` |
 | `run --rm app --job=...` 이 작업 없이 서버만 뜬다 | 이미지가 옛 버전입니다. 인자를 앱에 넘기는 `ENTRYPOINT` 수정이 들어간 이미지로 다시 빌드·푸시하세요 |

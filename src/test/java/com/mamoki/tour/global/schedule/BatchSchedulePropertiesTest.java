@@ -7,6 +7,10 @@ import java.time.ZoneId;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.test.context.assertj.AssertableApplicationContext;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.support.CronExpression;
 
 import com.mamoki.tour.global.schedule.BatchScheduleProperties.Job;
@@ -77,5 +81,63 @@ class BatchSchedulePropertiesTest {
         assertThat(properties.catalogCron()).isEqualTo("0 0 1 * * *");
         assertThat(properties.mentionEnabled()).isTrue();
         assertThat(properties.catalogEnabled()).isFalse();
+    }
+
+    /**
+     * {@code .env.example} 을 복사하고 켜짐 여부를 채우지 않으면 환경변수가 빈 문자열로
+     * 들어온다. 그 값이 {@code boolean} 으로 변환되지 않아 애플리케이션이 아예 뜨지 않는
+     * 일이 있었다. 꺼져 있어야 할 설정 때문에 서버가 죽지는 않아야 한다.
+     */
+    @Test
+    @DisplayName("켜짐 여부를 빈 값으로 주어도 기동하고 꺼짐으로 읽는다")
+    void bindsBlankEnabledAsDisabled() {
+        propertiesRunner()
+                .withPropertyValues(
+                        "tour.batch.schedule.mention.enabled=",
+                        "tour.batch.schedule.catalog.enabled=")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(bound(context).mentionEnabled()).isFalse();
+                    assertThat(bound(context).catalogEnabled()).isFalse();
+                });
+    }
+
+    @Test
+    @DisplayName("켜짐 여부를 아예 주지 않아도 기동하고 꺼짐으로 읽는다")
+    void bindsMissingEnabledAsDisabled() {
+        propertiesRunner()
+                .withPropertyValues(
+                        "tour.batch.schedule.mention.cron=0 0 3 1 * *",
+                        "tour.batch.schedule.catalog.cron=0 0 2 1 * *")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(bound(context).mentionEnabled()).isFalse();
+                    assertThat(bound(context).catalogEnabled()).isFalse();
+                });
+    }
+
+    @Test
+    @DisplayName("켜짐 여부를 true 로 주면 그대로 읽는다")
+    void bindsTrueEnabled() {
+        propertiesRunner()
+                .withPropertyValues("tour.batch.schedule.mention.enabled=true")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(bound(context).mentionEnabled()).isTrue();
+                    assertThat(bound(context).catalogEnabled()).isFalse();
+                });
+    }
+
+    private ApplicationContextRunner propertiesRunner() {
+        return new ApplicationContextRunner().withUserConfiguration(BindProperties.class);
+    }
+
+    private BatchScheduleProperties bound(AssertableApplicationContext context) {
+        return context.getBean(BatchScheduleProperties.class);
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @EnableConfigurationProperties(BatchScheduleProperties.class)
+    static class BindProperties {
     }
 }

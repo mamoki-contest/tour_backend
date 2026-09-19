@@ -79,7 +79,9 @@ java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=visitor-stats --file="sample/
 | `BATCH_SCHEDULE_ZONE` | `Asia/Seoul` | cron 을 해석할 시간대 |
 
 설정 키는 `tour.batch.schedule.*` 이며, 위 환경변수가 거기에 연결됩니다.
-기본 cron 과 시간대는 `BatchScheduleProperties` 상수 한 곳에만 있고 `application.yaml` 은 환경변수를 잇기만 합니다. 환경변수를 **비워 두면** 그 기본값을 씁니다.
+기본 cron 과 시간대는 `BatchScheduleProperties` 상수 한 곳에만 있고 `application.yaml` 은 환경변수를 잇기만 합니다. 환경변수를 **비워 두면** 그 기본값을 씁니다(`..._ENABLED` 를 비우면 꺼짐으로 읽습니다).
+
+**cron 식이나 시간대 이름을 잘못 적으면 앱이 아예 뜨지 않습니다.** 스케줄 하나가 조용히 빠지는 것보다, 운영자가 켰다고 믿는 작업이 실제로는 돌지 않는 편이 위험하다고 보아 기동을 막습니다. 배포 뒤 앱이 올라오지 않으면 `BATCH_SCHEDULE_*_CRON` (Spring cron 6자리)과 `BATCH_SCHEDULE_ZONE` (`Asia/Seoul` 같은 IANA 시간대 이름)부터 확인하세요.
 
 운영에서 켤 때:
 

@@ -32,10 +32,21 @@ public record BatchScheduleProperties(String zone, Job mention, Job catalog) {
     /**
      * 켜고 끌 수 있는 스케줄 하나.
      *
-     * @param enabled 켜짐 여부. 기본 꺼짐
+     * <p>{@code enabled} 가 {@code boolean} 이 아니라 {@code Boolean} 인 까닭은 기동을
+     * 지키기 위해서다. {@code .env.example} 을 복사하고 값을 채우지 않으면 환경변수가 빈
+     * 문자열로 들어오는데, 빈 문자열은 {@code boolean} 으로 변환되지 않아 애플리케이션이
+     * 아예 뜨지 않는다. 꺼져 있어야 할 설정 때문에 서버가 죽는 것은 과하다. 비운 것은
+     * 주지 않은 것과 같게 보고 꺼짐으로 읽는다.
+     *
+     * @param enabled 켜짐 여부. 비우거나 주지 않으면 꺼짐
      * @param cron    Spring cron 식(6자리). 비우면 각 작업의 기본값
      */
-    public record Job(boolean enabled, String cron) {
+    public record Job(Boolean enabled, String cron) {
+
+        /** 주지 않은 값({@code null})은 꺼짐이다. */
+        public boolean isEnabled() {
+            return Boolean.TRUE.equals(enabled);
+        }
     }
 
     public ZoneId zoneId() {
@@ -43,7 +54,7 @@ public record BatchScheduleProperties(String zone, Job mention, Job catalog) {
     }
 
     public boolean mentionEnabled() {
-        return mention != null && mention.enabled();
+        return mention != null && mention.isEnabled();
     }
 
     public String mentionCron() {
@@ -51,7 +62,7 @@ public record BatchScheduleProperties(String zone, Job mention, Job catalog) {
     }
 
     public boolean catalogEnabled() {
-        return catalog != null && catalog.enabled();
+        return catalog != null && catalog.isEnabled();
     }
 
     public String catalogCron() {
