@@ -709,7 +709,7 @@ class AttractionServiceTest {
     @Test
     @DisplayName("폴백은 조회 범위의 모든 페이지를 모은다")
     void fallbackCollectsEveryPage() {
-        given(attractionRepository.findLatestImportedAt()).willReturn(null);
+        given(attractionRepository.findLatestCatalogChangeAt()).willReturn(null);
         given(korServiceClient.areaBasedListByLawdKey(anyString(), any(), any(), anyInt(), anyInt()))
                 .willReturn("key");
         given(cacheService.fetch(any(), anyString(), any(), any()))
@@ -729,7 +729,7 @@ class AttractionServiceTest {
     @Test
     @DisplayName("폴백에서 한 페이지라도 최종 정상 데이터면 전체를 STALE 로 알린다")
     void fallbackReportsStaleIfAnyPageIsStale() {
-        given(attractionRepository.findLatestImportedAt()).willReturn(null);
+        given(attractionRepository.findLatestCatalogChangeAt()).willReturn(null);
         given(korServiceClient.areaBasedListByLawdKey(anyString(), any(), any(), anyInt(), anyInt()))
                 .willReturn("key");
         given(cacheService.fetch(any(), anyString(), any(), any())).willReturn(
@@ -750,7 +750,7 @@ class AttractionServiceTest {
     @Test
     @DisplayName("폴백 도중 공급자가 답하지 않으면 거기까지 모은 것으로 응답한다")
     void fallbackStopsWhenProviderGoesSilent() {
-        given(attractionRepository.findLatestImportedAt()).willReturn(null);
+        given(attractionRepository.findLatestCatalogChangeAt()).willReturn(null);
         given(korServiceClient.areaBasedListByLawdKey(anyString(), any(), any(), anyInt(), anyInt()))
                 .willReturn("key");
         given(cacheService.fetch(any(), anyString(), any(), any())).willReturn(
@@ -770,7 +770,7 @@ class AttractionServiceTest {
     @Test
     @DisplayName("폴백에서도 경계 밖 장소는 걸러진다")
     void fallbackFiltersByBounds() {
-        given(attractionRepository.findLatestImportedAt()).willReturn(null);
+        given(attractionRepository.findLatestCatalogChangeAt()).willReturn(null);
         givenProviderResponse(2,
                 providerItem("inside", "경계 안", "37.7500000", "128.8500000"),
                 providerItem("outside", "경계 밖", "40.0000000", "128.8500000"));
@@ -793,7 +793,7 @@ class AttractionServiceTest {
     @Test
     @DisplayName("폴백인데 언급량 스냅샷이 없으면 이름 오름차순으로 줄 세운다")
     void fallbackKeepsProviderOrderWithoutMentionSnapshot() {
-        given(attractionRepository.findLatestImportedAt()).willReturn(null);
+        given(attractionRepository.findLatestCatalogChangeAt()).willReturn(null);
         // 이미 등록해 둔 answer 가 given(...) 안에서 실행되지 않도록 반대 순서로 덮는다.
         willReturn(Optional.empty()).given(signalLookupService).findOnlineMentions(any());
         given(signalLookupService.findMentionRuleVersion()).willReturn(Optional.empty());
