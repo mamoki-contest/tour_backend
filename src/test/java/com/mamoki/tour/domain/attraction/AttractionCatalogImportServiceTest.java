@@ -8,11 +8,14 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,6 +33,8 @@ import com.mamoki.tour.domain.attraction.repository.AttractionCatalogImportRepos
 import com.mamoki.tour.domain.attraction.repository.AttractionRepository;
 import com.mamoki.tour.infra.korservice.KorServiceClient;
 import com.mamoki.tour.infra.korservice.KorServiceProperties;
+
+import jakarta.persistence.EntityManagerFactory;
 
 /**
  * 카탈로그 적재. 저장한 실제 KorService2 응답을 공급자 대신 돌려준다.
@@ -49,6 +54,9 @@ class AttractionCatalogImportServiceTest {
 
     @Autowired
     private AttractionCatalogImportRepository catalogImportRepository;
+
+    @Autowired
+    private EntityManagerFactory entityManagerFactory;
 
     @MockitoBean
     private KorServiceClient korServiceClient;
@@ -224,5 +232,66 @@ class AttractionCatalogImportServiceTest {
         assertThat(attractionRepository.count()).isEqualTo(result.fetched());
         Mockito.verify(korServiceClient, Mockito.atLeast(1))
                 .areaBasedListByLawdJson(anyString(), any(), any(), anyInt(), anyInt());
+    }
+
+    // --- 같은 내용의 재적재 (#77) -------------------------------------------------
+
+    /**
+     * 공급자가 준 것과 같은 응답으로 다시 적재하면 관광지 행은 한 줄도 다시 쓰이지 않는다.
+     *
+     * <p>공급자는 좌표를 소수 10자리로 준다. 컬럼은 {@code DECIMAL(10,7)} 이라 저장할 때
+     * 7자리로 줄어드는데, 다음 적재가 다시 10자리 값을 들고 오면 DB 에서 읽은 값과 같지
+     * 않아 Hibernate 가 UPDATE 를 낸다. 값은 그대로인데 4,700행이 매달 다시 쓰인다.
+     */
+    @Test
+    @DisplayName("내용이 같은 재적재는 관광지 행을 한 줄도 다시 쓰지 않는다")
+    void sameContentReimportUpdatesNoRow() {
+        importService.importAll();
+
+        Statistics statistics = statistics();
+        statistics.clear();
+
+        importService.importAll();
+
+        assertThat(statistics.getEntityUpdateCount()).isZero();
+    }
+
+    /**
+     * 같은 물음을 통계가 아니라 저장된 값으로 확인한다.
+     *
+     * <p>통계는 UPDATE 를 <b>냈는지</b>를 말하고, 이쪽은 행이 실제로 <b>바뀌었는지</b>를
+     * 말한다. 앞의 것이 구현에 가깝고 뒤의 것이 증상에 가까워 둘 다 둔다.
+     */
+    @Test
+    @DisplayName("내용이 같은 재적재 뒤에도 카탈로그 변경 시각은 그대로다")
+    void sameContentReimportLeavesModifiedAtAlone() {
+        importService.importAll();
+        LocalDateTime changedAt = attractionRepository.findLatestCatalogChangeAt();
+
+        importService.importAll();
+
+        assertThat(attractionRepository.findLatestCatalogChangeAt()).isEqualTo(changedAt);
+    }
+
+    /**
+     * 좌표는 컬럼이 담는 자리까지만 줄이고, 그 안에서는 잃지 않는다.
+     *
+     * <p>고정하는 값은 fixture 첫 항목(가람집옹심이)의 공급자 좌표
+     * {@code mapy=37.7611934162}, {@code mapx=128.9393320379} 다. 소수 7자리는 약 1cm 라
+     * 지도 표시와 장소 매칭 어느 쪽에도 뜻이 없는 자리다.
+     */
+    @Test
+    @DisplayName("좌표는 컬럼 자릿수까지 반올림해 담고 그 안에서는 정밀도를 잃지 않는다")
+    void keepsCoordinatePrecisionUpToColumnScale() {
+        importService.importAll();
+
+        Attraction saved = attractionRepository.findByContentId("2868839").orElseThrow();
+
+        assertThat(saved.getLatitude()).isEqualByComparingTo(new BigDecimal("37.7611934"));
+        assertThat(saved.getLongitude()).isEqualByComparingTo(new BigDecimal("128.9393320"));
+    }
+
+    private Statistics statistics() {
+        return entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
     }
 }
