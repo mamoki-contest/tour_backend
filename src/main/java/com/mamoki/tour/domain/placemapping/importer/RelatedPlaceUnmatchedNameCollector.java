@@ -7,7 +7,6 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import com.mamoki.tour.domain.placemapping.enums.MappingSource;
 import com.mamoki.tour.domain.placemapping.service.PlaceMatchIndex;
@@ -49,8 +48,12 @@ class RelatedPlaceUnmatchedNameCollector implements UnmatchedNameCollector {
         return MappingSource.RELATED_PLACE;
     }
 
+    /**
+     * <p><b>읽기 전용 트랜잭션으로 묶지 않는다.</b> 공급자 응답을 처음 받는 시·군은 캐시에
+     * 그 응답을 적는다. 읽기만 한다고 보고 묶으면 첫 실행이 캐시를 적는 순간 통째로 실패한다.
+     * 이름을 읽는 질의들은 각자 자기 트랜잭션에서 돈다.
+     */
     @Override
-    @Transactional(readOnly = true)
     public List<UnmatchedPlaceName> collect() {
         PlaceMatchIndex matchIndex = placeMatcher.index(MappingSource.RELATED_PLACE);
         Map<String, UnmatchedPlaceName> byKey = new LinkedHashMap<>();
