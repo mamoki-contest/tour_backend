@@ -87,7 +87,7 @@ class AttractionControllerTest {
                         TmapRankView.notAvailable(),
                         VisitorStatsView.notImported(),
                         null)),
-                676, 1, 20, null, DataStatus.AVAILABLE,
+                676, 1, 20, null, false, DataStatus.AVAILABLE,
                 LocalDateTime.of(2026, 9, 6, 12, 0), "KorService2"));
 
         mvc.perform(get("/api/v1/attractions"))
@@ -114,7 +114,7 @@ class AttractionControllerTest {
                         TmapRankView.notAvailable(),
                         VisitorStatsView.notImported(),
                         null)),
-                1, 1, 20, null, DataStatus.AVAILABLE, LocalDateTime.now(), "KorService2"));
+                1, 1, 20, null, false, DataStatus.AVAILABLE, LocalDateTime.now(), "KorService2"));
 
         mvc.perform(get("/api/v1/attractions"))
                 .andExpect(status().isOk())
@@ -503,6 +503,6 @@ class AttractionControllerTest {
                         TmapRankView.notAvailable(),
                         VisitorStatsView.notImported(),
                         visitTiming)),
-                1, 1, 20, null, DataStatus.AVAILABLE, LocalDateTime.now(), "KorService2");
+                1, 1, 20, null, false, DataStatus.AVAILABLE, LocalDateTime.now(), "KorService2");
     }
 }
