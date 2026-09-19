@@ -420,7 +420,12 @@ docker image prune -f
 활성 스냅샷에 그 관광지가 없을 때 `OnlineMentionView.notCollected()` 가 `COLLECTION_FAILED` 를 돌려줍니다.
 언급이 적다는 뜻이 아니라 **값을 얻지 못했다**는 뜻이라, `0` 으로 채우지 않습니다.)
 
-언급량 수집은 **월 1회 스케줄로 돌릴 수 있습니다.** 다음 절을 보세요.
+**주차장 표준데이터도 적재해야 채워집니다.** 돌리지 않으면 상세 응답의 주차 상태가
+강릉시 13곳(실시간 공급자) 밖에서 전부 `NO_DATA` 로 내려갑니다. "주차장이 없다"(`NONE`)
+가 아니라 **"있는지 없는지 확인하지 못했다"** 는 뜻입니다.
+
+언급량 수집은 **월 1회 스케줄로 돌릴 수 있습니다.** 파일로 받는 데이터(주차장·TMAP·입장객)는
+사람이 내려받아야 해서 스케줄이 없습니다. 다음 절을 보세요.
 
 **컨테이너 안에서 DB 를 직접 보려면:**
 
@@ -432,7 +437,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.docker exec db mysql -
 
 ## 8. 적재·수집을 서버에서 돌리기
 
-### 8-1. 손으로 한 번 돌린다
+### 8-1. 순서대로 손으로 한 번 돌린다
 
 스케줄을 켜기 전에 **반드시 손으로 먼저 돌립니다.** 실제 소요 시간과 외부 API 호출량을
 모르는 채로 주기 실행을 켜면, 사람이 보지 않는 새벽에 처음으로 돌게 됩니다.
@@ -440,14 +445,30 @@ docker compose -f docker-compose.prod.yml --env-file .env.docker exec db mysql -
 `run --rm` 은 같은 이미지로 일회성 컨테이너를 띄워 작업만 하고 지웁니다.
 `--no-deps` 를 붙이지 않으므로 DB 컨테이너가 떠 있어야 합니다.
 
+**순서가 있습니다.**
+
+```
+카탈로그  →  파일 적재(주차장·TMAP·입장객)  →  언급량
+```
+
+카탈로그가 맨 앞인 이유는 나머지가 그것을 딛고 서기 때문입니다. 언급량 수집은 카탈로그를
+순회하고, TMAP·입장객은 카탈로그의 `contentId` 에 매칭됩니다. 카탈로그가 비어 있으면
+수집이 멈추거나 매칭이 0건이 됩니다.
+
+**주차장 적재만은 카탈로그와 무관합니다.** 주차장은 관광지 이름이 아니라 좌표로 잇기
+때문에 언제 돌려도 됩니다. 그래도 한 번에 돌릴 때는 같은 자리에 둡니다.
+
 ```bash
-# 카탈로그 먼저. 언급량 수집이 이 테이블을 순회합니다.
+# 1. 카탈로그 먼저.
 docker compose -f docker-compose.prod.yml --env-file .env.docker \
   run --rm app --job=catalog
 ```
 
+**2. 그다음 파일 적재입니다.** 주차장·TMAP·입장객은 API 가 아니라 사람이 내려받은 파일로
+적재하고, 그 파일을 컨테이너에 넣어 줘야 해서 명령 모양이 다릅니다. **8-2** 를 보세요.
+
 ```bash
-# 그다음 언급량. 카탈로그 수천 곳을 도므로 오래 걸립니다.
+# 3. 마지막이 언급량. 카탈로그 수천 곳을 도므로 오래 걸립니다.
 docker compose -f docker-compose.prod.yml --env-file .env.docker \
   run --rm app --job=mention
 ```
@@ -459,7 +480,129 @@ docker compose -f docker-compose.prod.yml --env-file .env.docker \
 `--job` 을 주지 않으면 어떤 작업도 실행되지 않습니다. 운영 중인 `tour-app` 컨테이너는
 평소대로 서버로만 돕니다.
 
-### 8-2. 월간 스케줄을 켠다
+### 8-2. 파일로 받는 데이터를 적재한다 (주차장·TMAP·입장객)
+
+세 가지는 공급자가 API 를 열어 주지 않아 **사람이 내려받은 파일**로 적재합니다.
+어디서 어떤 조건으로 받는지는 `sample/README.md` 에 있습니다.
+
+| 작업 | 원본 | 인자 |
+| --- | --- | --- |
+| `parking-catalog` | 전국주차장정보표준데이터 CSV 1개 | `--file` 필수 |
+| `tmap` | 데이터랩 TMAP 검색순위 zip **18개**(강원 시·군마다 하나) | `--dir` 필수 |
+| `visitor-stats` | 주요관광지점 입장객통계 xls 1개 | `--file` 필수 |
+
+**8-2-1. 원본 파일을 서버에 올린다**
+
+> **앱 이미지 안에는 jar 하나뿐이고, compose 에 볼륨 마운트가 없습니다.** 서버에 올려 둔
+> 파일은 컨테이너 안에서 그냥 보이지 않습니다. 그래서 파일 적재를 돌릴 때만
+> `run --rm -v` 로 디렉터리 하나를 읽기 전용으로 붙입니다. **`docker-compose.prod.yml` 은
+> 고치지 않습니다** — 평소 떠 있는 `tour-app` 이 쓰지도 않을 디렉터리를 계속 붙들고 있을
+> 이유가 없습니다.
+
+서버에 둘 자리를 만듭니다.
+
+```bash
+mkdir -p ~/data/tmap
+```
+
+내 PC의 저장소 폴더에서 올립니다(파일명은 예시입니다).
+
+```bash
+scp sample/전국주차장정보표준데이터.csv root@<공인IP>:~/data/
+scp "sample/주요관광지점 입장객(2004.07 이후)_260918083154.xls" root@<공인IP>:~/data/
+scp sample/*.zip root@<공인IP>:~/data/tmap/
+```
+
+> **TMAP zip 은 이름을 바꾸지 마세요.** 어느 시·군의 몇 월 데이터인지는 zip 안의 CSV 가
+> 아니라 **파일명에만** 있습니다.
+> `{타임스탬프}_{시도}+{시군}_{시작월}-{종료월}_데이터랩_다운로드.zip` 형식에서 벗어나면
+> 적재가 파일명 검증에서 멈춥니다. 압축도 풀지 마세요.
+> 주차장 CSV 와 입장객 xls 는 `--file` 로 직접 지목하므로 이름을 바꿔도 됩니다.
+
+앱 컨테이너는 **비root(`tour`) 로 돕니다.** 올린 파일이 읽히도록 권한을 맞춥니다.
+
+```bash
+chmod 755 ~/data ~/data/tmap
+chmod 644 ~/data/*.csv ~/data/*.xls ~/data/tmap/*.zip
+```
+
+**8-2-2. 적재 명령**
+
+세 명령 모두 `-v "$HOME/data:/data:ro"` 로 그 디렉터리를 컨테이너의 `/data` 에 읽기 전용
+으로 붙입니다. **`-v` 는 서비스 이름(`app`) 앞에 와야 합니다.** 뒤에 쓰면 docker 옵션이
+아니라 앱에 넘어가는 인자가 되어, 마운트 없이 작업만 돌다 파일을 못 찾고 끝납니다.
+
+주차장 — 강릉시 13곳 밖의 주차 상태가 `NO_DATA` 로 내려가는 것을 막는 적재입니다.
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.docker \
+  run --rm -v "$HOME/data:/data:ro" app \
+  --job=parking-catalog --file=/data/전국주차장정보표준데이터.csv --downloaded-on=2026-09-19
+```
+
+```
+주차장 표준데이터 적재 완료: version=..., 기준일=2026-08-31, 행=1398, 좌표없음=..., 시·군=18
+```
+
+전국 파일에서 **제공기관명이 `강원특별자치도` 로 시작하는 행만** 적재합니다.
+`시·군` 이 18 이 아니면 파일이 잘렸거나 받는 조건이 전국 전체가 아니었던 겁니다.
+`--downloaded-on` 은 파일을 내려받은 날이고, 비우면 오늘로 봅니다. 데이터의 실제 기준일은
+CSV 안의 `데이터기준일자` 에서 읽으므로 이 값과 별개입니다.
+
+TMAP — `--file` 이 아니라 zip 이 든 **디렉터리**를 줍니다.
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.docker \
+  run --rm -v "$HOME/data:/data:ro" app \
+  --job=tmap --dir=/data/tmap --downloaded-on=2026-09-06
+```
+
+```
+TMAP 적재 완료: version=..., 지역=18, 행=..., 매칭=...
+```
+
+**강원 18개 시·군이 모두 있어야 적재됩니다.** 하나가 빠지면 그 시·군의 순위가 통째로
+사라지는데, 그것이 "순위에 들지 못했다" 와 구분되지 않습니다. 그래서 일부만 적재하지 않고
+멈춥니다. 18개의 원천 조회기간도 서로 같아야 합니다 — 한 번에 받으세요.
+
+입장객 — 파일명에 공백이 있으므로 `--file=` 부터 끝까지 따옴표로 감쌉니다.
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.docker \
+  run --rm -v "$HOME/data:/data:ro" app \
+  --job=visitor-stats \
+  --file="/data/주요관광지점 입장객(2004.07 이후)_260918083154.xls" --downloaded-on=2026-09-18
+```
+
+```
+입장객통계 적재 완료: version=..., 공표월=2026-06, 행=..., 매칭=...
+```
+
+공표월은 인자로 주지 않습니다. 파일에는 아직 공표되지 않은 달의 열이 비어 있고 잠정 집계
+중인 달은 일부 시·군만 차 있어서, **모든 시·군에 값이 있는 마지막 월**을 적재가 직접
+고릅니다. 엑셀을 받을 때 **셀 병합을 해제**해야 합니다(`sample/README.md`).
+
+세 작업 모두 8-1 과 마찬가지로 로그에 `...완료` 가 찍힌 뒤 `Ctrl+C` 로 빠져나옵니다.
+
+**8-2-3. 언제 다시 받아 적재하나**
+
+| 데이터 | 받는 곳 | 확인 주기 |
+| --- | --- | --- |
+| 전국주차장정보표준데이터 CSV | data.go.kr 표준데이터 15012896 | **반기(6개월)**. 파일 안 `데이터기준일자` 가 지난번보다 새로우면 적재합니다 |
+| TMAP 검색순위 zip 18개 | 한국관광 데이터랩 | **매월 6일 이후** 전월분이 올라왔는지 봅니다 |
+| 주요관광지점 입장객통계 xls | 관광지식정보시스템 | **매월 6일 이후** 전월분이 올라왔는지 봅니다 |
+
+입장객통계는 **공표가 분기 단위**라 매달 봐도 새 달이 늘어나 있지 않은 경우가 많습니다.
+공표월이 지난번과 같으면 적재하지 않아도 됩니다. 확정치는 이듬해 4월에 공표됩니다.
+
+다시 적재해도 예전 것을 지우지 않습니다. 새 스냅샷이 `ACTIVE` 가 되고 이전 것은
+`SUPERSEDED` 로 남습니다. **적재가 실패하면 직전 활성 스냅샷이 그대로 활성으로 남고**
+실패한 쪽만 `FAILED` 이력이 됩니다. 조회는 그동안 예전 값을 계속 씁니다.
+
+**이 세 작업은 스케줄로 돌릴 수 없습니다.** 사람이 파일을 내려받아 서버에 올려야 하기
+때문입니다. 스케줄이 있는 작업은 언급량과 카탈로그뿐입니다(8-3).
+
+### 8-3. 월간 스케줄을 켠다
 
 `.env.docker` 에 넣습니다. **기본은 전부 꺼짐이고, 하나도 켜지 않으면 스케줄러 자체가 뜨지 않습니다.**
 
@@ -484,7 +627,7 @@ cron 순서를 지켜야 합니다(기본값이 두 시간 차이를 둡니다).
 docker compose -f docker-compose.prod.yml --env-file .env.docker up -d --force-recreate app
 ```
 
-### 8-3. 켜졌는지 확인한다
+### 8-4. 켜졌는지 확인한다
 
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env.docker logs app | grep 스케줄
@@ -496,7 +639,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.docker logs app | grep
 
 **이 줄이 없으면 켜지지 않은 것입니다.** 값이 `true` 인지, 컨테이너를 다시 만들었는지 봅니다.
 
-### 8-4. 알아 둘 것
+### 8-5. 알아 둘 것
 
 - **이미 진행 중인 수집이 있으면 건너뜁니다.** `online_mention_snapshot` 에 `IMPORTING` 행이
   있으면 스케줄이 깨어나도 수집하지 않고 로그에 남깁니다. 손으로 돌린 수집과 겹쳐 같은 키로
@@ -533,8 +676,13 @@ docker compose -f docker-compose.prod.yml --env-file .env.docker logs app | grep
 | 컨테이너가 OOM 으로 죽는다 | 서버 메모리. 4GB 미만이면 MySQL+JVM이 빠듯합니다 |
 | 스케줄을 켠 뒤 앱이 아예 뜨지 않는다 | cron 형식이나 시간대 이름이 틀리면 기동 자체가 막힙니다. `BATCH_SCHEDULE_*_CRON` 은 Spring cron **6자리**(`0 0 3 1 * *`), `BATCH_SCHEDULE_ZONE` 은 IANA 시간대 이름(`Asia/Seoul`, `KST` 아님)이어야 합니다. `logs app` 첫 화면에서 확인하세요 |
 | 스케줄을 켰는데 기동 로그에 등록 줄이 없다 | `.env.docker` 의 `BATCH_SCHEDULE_..._ENABLED` 가 `true` 인지. 설정 파일만 고쳤다면 `up -d --force-recreate app` 으로 컨테이너를 다시 만들어야 합니다 |
-| 스케줄이 돌 시각이 지났는데 수집이 없다 | `online_mention_snapshot` 에 `IMPORTING` 이 남아 있으면 건너뜁니다(8-4). 컨테이너 시간대도 확인: `exec app date` |
+| 스케줄이 돌 시각이 지났는데 수집이 없다 | `online_mention_snapshot` 에 `IMPORTING` 이 남아 있으면 건너뜁니다(8-5). 컨테이너 시간대도 확인: `exec app date` |
 | `run --rm app --job=...` 이 작업 없이 서버만 뜬다 | 이미지가 옛 버전입니다. 인자를 앱에 넘기는 `ENTRYPOINT` 수정이 들어간 이미지로 다시 빌드·푸시하세요 |
+| 파일 적재가 `파일이 아닙니다: /data/...` 로 실패 | `-v` 를 서비스 이름 뒤에 썼을 가능성이 큽니다. `run --rm -v "$HOME/data:/data:ro" app --job=...` 순서를 지키세요. 컨테이너 안에서 실제로 보이는지 확인: `run --rm -v "$HOME/data:/data:ro" --entrypoint ls app -l /data` |
+| 파일 적재가 `Permission denied` 로 실패 | 앱 컨테이너는 비root(`tour`) 로 돕니다. `chmod 755 ~/data ~/data/tmap` 과 `chmod 644 ~/data/*.csv ~/data/*.xls ~/data/tmap/*.zip` (8-2-1) |
+| `--job=tmap` 이 `데이터랩 다운로드 파일명 형식이 아닙니다` | zip 이름을 바꿨거나 압축을 풀었습니다. 어느 시·군인지는 파일명에만 있습니다. 데이터랩에서 받은 이름 그대로 두세요 |
+| `--job=tmap` 이 지역이 모자라다며 멈춘다 | 강원 18개 시·군 zip 이 모두 있어야 하고 원천 조회기간도 같아야 합니다(8-2-2). `ls ~/data/tmap/*.zip \| wc -l` 이 18 인지 |
+| 적재는 성공했는데 주차 상태가 여전히 `NO_DATA` | `--job=parking-catalog` 를 돌렸는지, 로그의 `시·군` 이 18 인지 봅니다. 좌표(`위도`·`경도`)가 빈 행은 적재돼도 반경 조회에서 빠집니다 |
 
 ## 참고 문서
 

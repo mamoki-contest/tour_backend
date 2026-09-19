@@ -87,7 +87,7 @@ cp .env.example .env
 
 ## 적재·수집 작업
 
-카탈로그·언급량·TMAP·입장객·주차장 적재는 커맨드라인으로 실행합니다.
+카탈로그·언급량·TMAP·입장객·주차장 적재와 장소 매핑은 커맨드라인으로 실행합니다.
 
 ```bash
 java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=catalog
@@ -95,6 +95,7 @@ java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=mention --month=202609
 java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=tmap --dir=sample --downloaded-on=2026-09-06
 java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=visitor-stats --file="sample/주요관광지점 입장객(2004.07 이후)_260918083154.xls"
 java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=parking-catalog --file="sample/전국주차장정보표준데이터.csv" --downloaded-on=2026-09-19
+java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=place-mapping --source=tmap
 ```
 
 `--job` 을 주지 않으면 어떤 작업도 실행되지 않고 평소대로 서버만 뜹니다.
@@ -106,6 +107,7 @@ java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=parking-catalog --file="sampl
 | `tmap` | TMAP 검색순위 zip 묶음 적재 | `--dir` 필수, `--downloaded-on` |
 | `visitor-stats` | 주요관광지점 입장객통계 엑셀 적재 | `--file` 필수, `--downloaded-on` |
 | `parking-catalog` | 전국주차장정보표준데이터 CSV 적재(강원 행만) | `--file` 필수, `--downloaded-on` |
+| `place-mapping` | 카카오 로컬 API 로 미매칭 이름을 카탈로그에 매핑 | `--source` (비우면 셋 모두) |
 
 **`catalog` 을 먼저 돌려야 합니다.** 언급량 수집은 카탈로그를 순회하고, TMAP·입장객은 카탈로그의 `contentId` 에 매칭되므로 카탈로그가 비어 있으면 수집이 멈추거나 매칭이 0건이 됩니다.
 
@@ -321,6 +323,11 @@ java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=parking-catalog --file="sampl
 안 됩니다.** 도심은 늘 느리고 외곽은 늘 빠르며 그것은 혼잡이 아니라 입지입니다.
 도로별 평균 통행시간은 `road.roads[].averageTravelTime` 에 초 단위로 들어 있습니다.
 
+**도로명이 없는 구간은 `road.roads` 목록에서 빼되 `linkCount`·`averageSpeed` 에는 넣습니다.**
+공급자는 이름 없는 구간을 `"-"` 로 내려주는데, 이는 이름이 아니라 이름 없음의 표기입니다.
+글자도 숫자도 없는 값(`-`, `--`, `.` 등)은 모두 이름 없음으로 보며, 이름이 없어도 그 구간의
+관측 자체는 유효하므로 구간 수와 평균 속도에는 그대로 셉니다.
+
 #### 주차 (`currentAccess.parking`)
 
 두 공급자를 겹쳐 씁니다. 하나만으로는 "주차장이 아예 없는 곳" 과 "주차장은 있으나 지금
@@ -459,8 +466,84 @@ KorService2 강릉 항목        675건
 매칭은 10곳에서 11곳으로 늘 뿐이라, 표기 정규화로 풀리는 문제가 아닙니다.
 
 **대부분의 관광지 상세는 `NO_RELATED_DATA` 를 받습니다.** 이것이 값을 지어내지 않는
-정상 동작이며, 그래서 빈 목록과 정보 없음을 상태로 구분합니다. 커버리지를 올리려면
-좌표 기반 매칭이나 별도 매핑 테이블이 필요하며, 이는 별도 논의 대상입니다.
+정상 동작이며, 그래서 빈 목록과 정보 없음을 상태로 구분합니다.
+
+커버리지를 올리는 길로 아래 **장소 매핑** 을 더했습니다. 다만 공급자가 강릉시에서
+기준 관광지로 이름을 대는 곳이 68곳뿐이라, 카탈로그 991곳 중 연관 정보를 받을 수 있는
+장소의 상한이 애초에 낮습니다. 매핑은 그 68곳을 더 많이 잇게 할 뿐 상한을 올리지 못합니다.
+
+## 장소 매핑 (`place_mapping`)
+
+TMAP 검색순위·입장객통계·연관 장소가 적는 이름이 관광공사 카탈로그와 달라 이어지지
+않는 경우가 많습니다. `경포해변`(TMAP) 과 `경포해수욕장`(카탈로그) 처럼 이름 자체가
+달라 표기 정규화로는 풀리지 않습니다.
+
+카카오 로컬 키워드 검색으로 그 이름의 좌표와 대표 이름을 얻어 카탈로그에 잇고,
+판정을 `place_mapping` 표에 남깁니다.
+
+```bash
+java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=place-mapping                       # 셋 모두
+java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=place-mapping --source=tmap
+java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=place-mapping --source=visitor-stats
+java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=place-mapping --source=related
+```
+
+`KAKAO_REST_API_KEY` 가 비어 있으면 호출을 한 번도 내지 않고 이유를 남기고 끝냅니다.
+REST API 키이며 JavaScript 키가 아닙니다. 로컬 API 는 도메인 등록이 필요 없습니다.
+
+### 판정 순서
+
+활성 스냅샷(연관 장소는 공급자 응답)의 **미매칭 이름만** 봅니다. 이미 이어진 이름을
+부르면 얻는 것 없이 하루 한도(로컬 검색 100,000회)만 깎습니다.
+
+| 순서 | 상황 | 결과 |
+| --- | --- | --- |
+| 1 | 대상 시·군 안의 카카오 장소가 없음 | `UNMATCHED` |
+| 2 | 원천 이름과 똑같은 카카오 장소가 둘 이상 | `LOW_CONFIDENCE` |
+| 3 | 카카오 대표 이름이 그 시·군 카탈로그에서 **유일하게** 일치 | `CONFIRMED` (`EXACT`·`NORMALIZED`) |
+| 4 | 거리 경계(기본 300m) 안 후보가 한 곳 | `CONFIRMED` (`KAKAO_COORD`) |
+| 5 | 경계 안 후보가 둘 이상, 또는 최근접이 경계 밖 | `LOW_CONFIDENCE` |
+| 6 | 좌표를 견줄 후보가 없음 | `UNMATCHED` |
+
+**`CONFIRMED` 만 조회에 값을 만듭니다.** 저신뢰 매칭으로 숫자를 만들면 틀린 장소에
+입장객 수나 검색순위가 붙는데, 에러가 나지 않아 아무도 알아채지 못합니다.
+경계 안에 후보가 둘이면 그중 하나가 훨씬 가까워도 확정하지 않습니다.
+
+3번을 거리보다 앞에 두는 것은, 계곡·산·해변처럼 영역이 넓은 곳에서 두 서비스의 대표
+좌표가 km 단위로 어긋나기 때문입니다(`고원통계곡` 13,641m). 경계를 그만큼 넓히면 이번에는
+도심에서 다른 장소가 붙습니다. 시·군 안 유일성 조건이 있어 이 길이 거리보다 느슨하지 않습니다.
+
+거리 경계는 `PLACE_MAPPING_BOUNDARY`, 한 실행의 호출 상한은 `PLACE_MAPPING_MAX_CALLS`
+로 바꿉니다.
+
+### 반영 시점
+
+**이 배치는 조회 응답을 바꾸지 않습니다.** 판정을 표에 남길 뿐입니다.
+
+| 원천 | 반영 시점 |
+| --- | --- |
+| `tmap` | 다음 `--job=tmap` 적재가 표를 읽어 이어 붙입니다 |
+| `visitor-stats` | 다음 `--job=visitor-stats` 적재가 이어 붙입니다 |
+| `related` | 조회 시점에 표를 보므로 바로 반영됩니다 |
+
+스냅샷은 그 적재가 무엇을 만들었는지의 기록이라 나중에 고쳐 넣지 않습니다. 재적재를 잊는
+것이 조용한 실패가 되므로, 배치가 확정 건수와 함께 다시 돌릴 명령을 로그에 적습니다.
+
+### 운영자가 직접 넣기
+
+`method = 'MANUAL'` 인 행은 배치가 덮지 않습니다. 사람이 확인해 넣은 판단을 자동 판정이
+되돌리면, 같은 행이 실행할 때마다 왔다 갔다 하면서 아무도 알아채지 못합니다.
+
+```sql
+INSERT INTO place_mapping
+    (source, source_name, normalized_name, lawd_code, content_id,
+     method, status, decided_at, created_at, modified_at)
+VALUES ('TMAP', '강원랜드카지노', '강원랜드카지노', '51770', '<카탈로그 contentId>',
+        'MANUAL', 'CONFIRMED', NOW(), NOW(), NOW());
+```
+
+`normalized_name` 은 이름에서 글자와 숫자만 남기고 소문자로 바꾼 값입니다
+(`PlaceNameNormalizer`). 판정을 다시 받고 싶으면 그 행을 지우면 됩니다.
 
 ## 시드로 관리하는 표
 
@@ -551,7 +634,8 @@ KorService2 강릉 항목        675건
 
 ## 외부 API
 
-공공데이터포털(`apis.data.go.kr`)에서 제공하며 **인증키 하나(`KOR_SERVICE_KEY`)를 공유**합니다.
+카카오를 뺀 나머지는 공공데이터포털(`apis.data.go.kr`)에서 제공하며
+**인증키 하나(`KOR_SERVICE_KEY`)를 공유**합니다.
 계정당 인증키는 하나이고, 서비스별로는 활용신청으로 권한만 붙습니다.
 
 | 서비스 | 용도 | 기관코드 |
@@ -562,8 +646,9 @@ KorService2 강릉 항목        675건
 | `TarRlteTarService1` | 연관 관광지·음식점·숙박 | B551011 |
 | `DataLabService` | 지역별 방문자수 | B551011 |
 | `GNitsTrafficInfoService_1.0` | 강릉시 실시간 주차(`getParkInfo`·`getParkRltm`) | 4201000 |
+| 카카오 로컬 REST API | 공급자 간 장소 매핑(지도 표시 아님) | 없음 (공공데이터포털이 아님) |
 
-**강릉시 교통정보 조회서비스만 기관코드가 다릅니다.** 키는 같지만 경로가 달라
+**공공데이터포털 서비스 중에서는 강릉시 교통정보 조회서비스만 기관코드가 다릅니다.** 키는 같지만 경로가 달라
 `GN_ITS_BASE_URL` 을 따로 둡니다. 강원 18개 시·군을 전수 조사한 결과 실시간 주차
 오픈API 를 여는 지자체는 강릉시 하나뿐이었고, 그마저 주차장 13곳입니다.
 항상 JSON 으로 응답하며 `type`·`_type` 파라미터는 무시됩니다.
@@ -585,6 +670,10 @@ KorService2 강릉 항목        675건
 
 관광지 관심도는 API 가 아니라 한국관광 데이터랩 공식 CSV/Excel 로 적재합니다.
 기존 관광빅데이터정보서비스 API 는 폐기되었습니다.
+
+카카오 로컬 REST API 는 공공데이터포털이 아니라 developers.kakao.com 에서 발급한
+`KAKAO_REST_API_KEY` 를 씁니다. 지도 표시가 아니라 위 **장소 매핑** 에만 쓰는 서버 전용
+키이며 프론트로 내려보내지 않습니다.
 
 한국교통안전공단 주차정보 API 는 **심의승인** 이라 자동으로 열리지 않아 쓰지 않습니다.
 연계 지자체 목록이 비공개라 승인되어도 강원 데이터가 나온다는 보장이 없습니다.

@@ -22,6 +22,12 @@ import org.springframework.test.context.ActiveProfiles;
 
 import com.mamoki.tour.domain.attraction.entity.Attraction;
 import com.mamoki.tour.domain.attraction.repository.AttractionRepository;
+import com.mamoki.tour.domain.attraction.support.PlaceNameNormalizer;
+import com.mamoki.tour.domain.placemapping.entity.PlaceMapping;
+import com.mamoki.tour.domain.placemapping.enums.MappingSource;
+import com.mamoki.tour.domain.placemapping.enums.PlaceMappingStatus;
+import com.mamoki.tour.domain.placemapping.enums.PlaceMatchMethod;
+import com.mamoki.tour.domain.placemapping.repository.PlaceMappingRepository;
 import com.mamoki.tour.domain.tmaprank.entity.TmapRankEntry;
 import com.mamoki.tour.domain.tmaprank.importer.TmapRankImportException;
 import com.mamoki.tour.domain.tmaprank.importer.TmapRankImportResult;
@@ -60,6 +66,9 @@ class TmapRankImportServiceTest {
     @Autowired
     private RegionCodeRepository regionCodeRepository;
 
+    @Autowired
+    private PlaceMappingRepository placeMappingRepository;
+
     /**
      * 적재는 실제 커밋을 남기므로 테스트 사이에 남는다. 각 테스트가 서로에게 영향을 주지
      * 않도록 앞에서 비운다. 지역코드 시드는 data.sql 이 유지하므로 건드리지 않는다.
@@ -69,6 +78,80 @@ class TmapRankImportServiceTest {
         tmapRankEntryRepository.deleteAllInBatch();
         snapshotRepository.deleteAllInBatch();
         attractionRepository.deleteAllInBatch();
+        placeMappingRepository.deleteAllInBatch();
+    }
+
+    /** 장소 매핑 배치(#55)가 남겼을 판정 한 줄. */
+    private void saveMapping(String sourceName, String lawdCode, String contentId,
+                             PlaceMappingStatus status) {
+        placeMappingRepository.save(PlaceMapping.builder()
+                .source(MappingSource.TMAP)
+                .sourceName(sourceName)
+                .normalizedName(PlaceNameNormalizer.normalize(sourceName))
+                .lawdCode(lawdCode)
+                .contentId(contentId)
+                .method(status == PlaceMappingStatus.CONFIRMED ? PlaceMatchMethod.KAKAO_COORD : null)
+                .status(status)
+                .decidedAt(LocalDateTime.now())
+                .build());
+    }
+
+    @Test
+    @DisplayName("확정 매핑이 있으면 이름이 달라도 적재가 이어 붙인다")
+    void confirmedMappingConnectsUnmatchedRowOnReimport() {
+        RegionCode gangneung = regionCodeRepository.findByLawdCode("51150").orElseThrow();
+        attractionRepository.save(Attraction.builder()
+                .contentId("126508")
+                .name("경포해수욕장")
+                .regionCode(gangneung)
+                .dataStatus(DataStatus.AVAILABLE)
+                .baseAt(LocalDateTime.now())
+                .source("KorService2")
+                .build());
+
+        // 매핑 없이 적재하면 파일의 `경포해변` 은 카탈로그의 `경포해수욕장` 과 이어지지 않는다.
+        importService.importFrom(SAMPLE_DIR, DOWNLOADED_ON);
+        assertThat(tmapRankEntryRepository.findAll())
+                .filteredOn(row -> "경포해변".equals(row.getRawPlaceName()))
+                .allSatisfy(row -> assertThat(row.getContentId()).isNull());
+
+        saveMapping("경포해변", "51150", "126508", PlaceMappingStatus.CONFIRMED);
+        TmapRankImportResult reimported = importService.importFrom(SAMPLE_DIR, DOWNLOADED_ON);
+
+        // 재적재는 새 스냅샷을 만든다. 직전 스냅샷 행은 그대로 남으므로 활성 스냅샷만 본다.
+        assertThat(tmapRankEntryRepository.findAll())
+                .filteredOn(row -> row.getSnapshot().getId().equals(reimported.snapshot().getId()))
+                .filteredOn(row -> "경포해변".equals(row.getRawPlaceName()))
+                .isNotEmpty()
+                .allSatisfy(row -> {
+                    assertThat(row.getContentId()).isEqualTo("126508");
+                    assertThat(row.getMatchStatus()).isEqualTo(CatalogMatchStatus.MATCHED);
+                });
+    }
+
+    @Test
+    @DisplayName("저신뢰 매핑은 적재에도 값을 만들지 않는다")
+    void lowConfidenceMappingStaysUnmatchedOnReimport() {
+        RegionCode gangneung = regionCodeRepository.findByLawdCode("51150").orElseThrow();
+        attractionRepository.save(Attraction.builder()
+                .contentId("126508")
+                .name("경포해수욕장")
+                .regionCode(gangneung)
+                .dataStatus(DataStatus.AVAILABLE)
+                .baseAt(LocalDateTime.now())
+                .source("KorService2")
+                .build());
+        saveMapping("경포해변", "51150", "126508", PlaceMappingStatus.LOW_CONFIDENCE);
+
+        importService.importFrom(SAMPLE_DIR, DOWNLOADED_ON);
+
+        assertThat(tmapRankEntryRepository.findAll())
+                .filteredOn(row -> "경포해변".equals(row.getRawPlaceName()))
+                .isNotEmpty()
+                .allSatisfy(row -> {
+                    assertThat(row.getContentId()).isNull();
+                    assertThat(row.getMatchStatus()).isEqualTo(CatalogMatchStatus.UNMATCHED);
+                });
     }
 
     private Long activeSnapshotId() {

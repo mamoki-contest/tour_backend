@@ -38,6 +38,18 @@ public interface TmapRankEntryRepository extends JpaRepository<TmapRankEntry, Lo
             """)
     List<String> findMatchedContentIds(@Param("snapshot") TmapRankSnapshot snapshot);
 
+    /**
+     * 카탈로그에 잇지 못한 행. 장소 매핑 배치(#55)가 이 이름들만 카카오로 찾는다.
+     *
+     * <p>이미 이어진 행까지 부르면 얻는 것 없이 하루 한도만 깎는다.
+     */
+    @Query("""
+            select e from TmapRankEntry e
+            where e.snapshot = :snapshot
+              and e.matchStatus = com.mamoki.tour.global.enums.CatalogMatchStatus.UNMATCHED
+            """)
+    List<TmapRankEntry> findUnmatchedBySnapshot(@Param("snapshot") TmapRankSnapshot snapshot);
+
     long countBySnapshot(TmapRankSnapshot snapshot);
 
     void deleteBySnapshot(TmapRankSnapshot snapshot);

@@ -14,8 +14,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -24,7 +26,9 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 import com.mamoki.tour.domain.attraction.dto.AttractionSnapshot;
+import com.mamoki.tour.domain.attraction.support.PlaceNameNormalizer;
 import com.mamoki.tour.domain.cache.dto.CachedResponse;
+import com.mamoki.tour.domain.placemapping.service.PlaceMatcher;
 import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
 import com.mamoki.tour.domain.relatedplace.dto.RelatedPlace;
 import com.mamoki.tour.domain.relatedplace.dto.RelatedPlaces;
@@ -34,6 +38,7 @@ import com.mamoki.tour.domain.relatedplace.enums.RelatedPlaceKind;
 import com.mamoki.tour.domain.relatedplace.enums.RelatedPlacesStatus;
 import com.mamoki.tour.domain.relatedplace.repository.AlternativeCurationRepository;
 import com.mamoki.tour.domain.relatedplace.service.AlternativeCurationService;
+import com.mamoki.tour.domain.relatedplace.service.RelatedPlaceRegionLoader;
 import com.mamoki.tour.domain.relatedplace.service.RelatedPlaceService;
 import com.mamoki.tour.domain.visittiming.dto.VisitTiming;
 import com.mamoki.tour.domain.visittiming.enums.DateMode;
@@ -64,6 +69,7 @@ class RelatedPlaceServiceTest {
     private VisitTimingService visitTimingService;
     private AlternativeCurationRepository curationRepository;
     private TarRlteTarClient client;
+    private PlaceMatcher placeMatcher;
 
     @BeforeEach
     void setUp() {
@@ -87,8 +93,27 @@ class RelatedPlaceServiceTest {
         curationRepository = Mockito.mock(AlternativeCurationRepository.class);
         given(curationRepository.findAllByBaseContentId(anyString())).willReturn(List.of());
 
-        relatedPlaceService = new RelatedPlaceService(client, cacheService, visitTimingService,
-                new AlternativeCurationService(curationRepository));
+        // 기본은 매핑이 없는 상태. 카탈로그 이름 하나로만 연관 목록을 찾는다.
+        placeMatcher = Mockito.mock(PlaceMatcher.class);
+        givenMappedNames();
+
+        relatedPlaceService = new RelatedPlaceService(
+                new RelatedPlaceRegionLoader(client, cacheService), visitTimingService,
+                new AlternativeCurationService(curationRepository), placeMatcher);
+    }
+
+    /** 매핑 표가 이 관광지를 가리킨다고 알려 준 원천 쪽 이름들. 비우면 카탈로그 이름만 쓴다. */
+    private void givenMappedNames(String... sourceNames) {
+        given(placeMatcher.normalizedAliases(any(), any(), anyString()))
+                .willAnswer(call -> {
+                    Set<String> aliases = new LinkedHashSet<>();
+                    aliases.add(PlaceNameNormalizer.normalize(call.getArgument(2)));
+                    Arrays.stream(sourceNames)
+                            .map(PlaceNameNormalizer::normalize)
+                            .forEach(aliases::add);
+
+                    return aliases;
+                });
     }
 
     private TarRlteTarClient realClient() {
@@ -437,6 +462,44 @@ class RelatedPlaceServiceTest {
                 .action(action)
                 .reason("테스트 fixture")
                 .build();
+    }
+
+    @Test
+    @DisplayName("공급자가 다른 이름으로 적어 둔 관광지도 확정 매핑이 있으면 연관 목록을 찾는다")
+    void findsRelatedListThroughConfirmedMapping() {
+        // 공급자는 경포해수욕장으로, 카탈로그는 경포해변으로 적는다. 이름만으로는 이어지지 않는다.
+        givenResponse(body(row("경포해수욕장", "정동진", "관광지", 1, GANGNEUNG)));
+        givenMappedNames("경포해수욕장");
+
+        RelatedPlaces result = relatedPlaceService.resolve(attraction("경포해변", GANGNEUNG), TODAY);
+
+        assertThat(result.alternatives().status()).isEqualTo(RelatedPlacesStatus.AVAILABLE);
+        assertThat(result.alternatives().items()).extracting(RelatedPlace::name)
+                .containsExactly("정동진");
+    }
+
+    @Test
+    @DisplayName("매핑이 없으면 지금까지처럼 연관 정보 없음으로 남는다")
+    void staysWithoutDataWhenNoMappingExists() {
+        givenResponse(body(row("경포해수욕장", "정동진", "관광지", 1, GANGNEUNG)));
+
+        RelatedPlaces result = relatedPlaceService.resolve(attraction("경포해변", GANGNEUNG), TODAY);
+
+        assertThat(result.alternatives().status()).isEqualTo(RelatedPlacesStatus.NO_RELATED_DATA);
+    }
+
+    @Test
+    @DisplayName("매핑으로 찾은 목록 안에 있는 원래 장소는 자기 대체지가 되지 않는다")
+    void doesNotRecommendItselfThroughMappedName() {
+        // 공급자가 기준 관광지를 자기 연관 목록에 넣어 준다. 그 이름도 매핑이 가리키는 이름이다.
+        givenResponse(body(row("경포해수욕장", "경포해수욕장", "관광지", 1, GANGNEUNG),
+                row("경포해수욕장", "정동진", "관광지", 2, GANGNEUNG)));
+        givenMappedNames("경포해수욕장");
+
+        RelatedPlaces result = relatedPlaceService.resolve(attraction("경포해변", GANGNEUNG), TODAY);
+
+        assertThat(result.alternatives().items()).extracting(RelatedPlace::name)
+                .containsExactly("정동진");
     }
 
     private void givenResponse(String body) {
