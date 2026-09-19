@@ -170,6 +170,11 @@ java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=place-mapping --source=tmap
 같게 시작하는 스키마는 통과하지 못합니다.
 `tour` 나 운영 스키마를 가리키면 테스트가 멈춥니다.
 
+그 확인은 자신이 뜬 `test` 프로파일 컨텍스트만 볼 수 있어서, 프로파일을 빠뜨린 테스트는
+시야에 들어오지 않습니다. `SpringBootTestProfileGuardTest` 가 컴파일된 테스트 클래스를 훑어
+`@ActiveProfiles("test")` 없는 `@SpringBootTest` 를 잡습니다. 새 통합 테스트를 쓸 때는
+`@SpringBootTest` 와 `@ActiveProfiles("test")` 를 함께 붙입니다.
+
 ## 규칙
 
 - 마이그레이션 도구를 쓰지 않고 `ddl-auto` 로 스키마를 관리합니다.
