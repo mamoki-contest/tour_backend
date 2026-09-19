@@ -47,7 +47,7 @@ class AttractionSortOrderTest {
     }
 
     private List<AttractionResponse> sorted(List<AttractionResponse> items, AttractionSort sort) {
-        return new AttractionSortOrder().order(items, sort);
+        return new AttractionSortOrder().order(items, sort).items();
     }
 
     @Test
@@ -120,10 +120,37 @@ class AttractionSortOrderTest {
     @DisplayName("정보 없음 구역도 관광지명 오름차순으로 고정한다")
     void ordersUnsortableByName() {
         List<AttractionResponse> items = List.of(
-                place("다미산정", null), place("가미산정", null), place("나미산정", null));
+                place("다미산정", null), place("가미산정", null),
+                place("나미산정", null), place("산정된해변", 100L));
 
         assertThat(namesOf(sorted(items, AttractionSort.ONLINE_MENTION_DESC)))
-                .containsExactly("가미산정", "나미산정", "다미산정");
+                .containsExactly("산정된해변", "가미산정", "나미산정", "다미산정");
+    }
+
+    /**
+     * 산정된 장소가 하나도 없으면 줄 세울 기준이 없다. 그때 이름순으로 다시 늘어놓으면
+     * 요청한 정렬과 아무 상관 없는 순서가 정렬 결과처럼 보인다(#65).
+     */
+    @Test
+    @DisplayName("산정된 장소가 하나도 없으면 정렬하지 않고 들어온 순서를 그대로 둔다")
+    void doesNotOrderWhenNothingIsSortable() {
+        List<AttractionResponse> items = List.of(
+                place("다미산정", null), place("가미산정", null), ambiguous("해수욕장"));
+
+        AttractionSortOrder.Ordered ordered =
+                new AttractionSortOrder().order(items, AttractionSort.ONLINE_MENTION_DESC);
+
+        assertThat(ordered.applied()).isFalse();
+        assertThat(namesOf(ordered.items())).containsExactly("다미산정", "가미산정", "해수욕장");
+    }
+
+    @Test
+    @DisplayName("산정된 장소가 하나라도 있으면 정렬을 적용했다고 알린다")
+    void reportsAppliedWhenAnythingIsSortable() {
+        List<AttractionResponse> items = List.of(place("가미산정", null), place("나해변", 5L));
+
+        assertThat(new AttractionSortOrder().order(items, AttractionSort.ONLINE_MENTION_DESC)
+                .applied()).isTrue();
     }
 
     @Test

@@ -10,6 +10,8 @@ import static org.mockito.BDDMockito.given;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -21,8 +23,10 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import com.mamoki.tour.domain.attraction.entity.Attraction;
+import com.mamoki.tour.domain.attraction.entity.AttractionCatalogImport;
 import com.mamoki.tour.domain.attraction.importer.AttractionCatalogImportResult;
 import com.mamoki.tour.domain.attraction.importer.AttractionCatalogImportService;
+import com.mamoki.tour.domain.attraction.repository.AttractionCatalogImportRepository;
 import com.mamoki.tour.domain.attraction.repository.AttractionRepository;
 import com.mamoki.tour.infra.korservice.KorServiceClient;
 import com.mamoki.tour.infra.korservice.KorServiceProperties;
@@ -43,6 +47,9 @@ class AttractionCatalogImportServiceTest {
     @Autowired
     private AttractionRepository attractionRepository;
 
+    @Autowired
+    private AttractionCatalogImportRepository catalogImportRepository;
+
     @MockitoBean
     private KorServiceClient korServiceClient;
 
@@ -51,6 +58,7 @@ class AttractionCatalogImportServiceTest {
     @BeforeEach
     void setUp() throws Exception {
         attractionRepository.deleteAllInBatch();
+        catalogImportRepository.deleteAllInBatch();
 
         try (InputStream in = getClass().getResourceAsStream(
                 "/fixtures/korservice-areaBasedList2.json")) {
@@ -134,6 +142,52 @@ class AttractionCatalogImportServiceTest {
         assertThat(after.getName()).isEqualTo(before.getName());
     }
 
+    // --- 적재 이력 (#69) ---------------------------------------------------------
+
+    @Test
+    @DisplayName("적재를 마치면 실행 이력 한 줄을 남긴다")
+    void recordsImportHistory() {
+        AttractionCatalogImportResult result = importService.importAll();
+
+        List<AttractionCatalogImport> history = catalogImportRepository.findAll();
+
+        assertThat(history).hasSize(1);
+        assertThat(history.get(0).getFetchedCount()).isEqualTo(result.fetched());
+        assertThat(history.get(0).getSavedCount()).isEqualTo(result.saved());
+        assertThat(history.get(0).getCompletedAt())
+                .isAfterOrEqualTo(history.get(0).getStartedAt());
+    }
+
+    /**
+     * 같은 응답으로 다시 적재해도 마지막 적재 시각은 앞으로 간다(#69).
+     *
+     * <p>{@code attraction.modified_at} 으로는 이것을 보장할 수 없다. 그 값은 행이 실제로
+     * 바뀔 때만 움직이는데, 적재는 바뀔 것이 있는지를 약속하지 않는다. 같은 값을 다시 써도
+     * Hibernate 가 UPDATE 를 내지 않으면 지난달 시각이 그대로 남는다. 반대로 값이 그대로여도
+     * 자릿수 표기만 다르면 UPDATE 가 나가기도 한다. 어느 쪽이든 <b>돌린 시각</b>과는 다른
+     * 물음에 답하는 값이라, 실행 시각은 이력이 따로 든다.
+     */
+    @Test
+    @DisplayName("내용이 같은 재적재 뒤에도 마지막 적재 시각은 갱신된다")
+    void latestImportMovesEvenWhenNothingChanged() {
+        AttractionCatalogImportResult first = importService.importAll();
+        LocalDateTime firstImport = catalogImportRepository.findLatestCompletedAt();
+
+        AttractionCatalogImportResult second = importService.importAll();
+
+        // 두 번째는 새로 담은 것이 하나도 없다. 그런데도 적재 시각은 앞으로 간다.
+        assertThat(second.inserted()).isZero();
+        assertThat(second.updated()).isEqualTo(first.inserted());
+        assertThat(catalogImportRepository.findLatestCompletedAt()).isAfter(firstImport);
+        assertThat(catalogImportRepository.count()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("적재한 적이 없으면 마지막 적재 시각은 null 이다")
+    void latestImportIsNullBeforeAnyImport() {
+        assertThat(catalogImportRepository.findLatestCompletedAt()).isNull();
+    }
+
     @Test
     @DisplayName("공급자가 아무것도 주지 않으면 적재하지 않는다")
     void rejectsEmptyProviderResponse() {
@@ -144,6 +198,8 @@ class AttractionCatalogImportServiceTest {
                 .isInstanceOf(IllegalStateException.class);
 
         assertThat(attractionRepository.count()).isZero();
+        // 마치지 못한 적재는 이력에도 남지 않는다. 이 표의 마지막 행은 곧 마지막 성공 적재다.
+        assertThat(catalogImportRepository.count()).isZero();
     }
 
     @Test

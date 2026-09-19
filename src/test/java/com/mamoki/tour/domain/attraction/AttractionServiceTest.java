@@ -35,10 +35,12 @@ import com.mamoki.tour.domain.attraction.dto.AttractionSearchRequest;
 import com.mamoki.tour.domain.attraction.dto.AttractionSort;
 import com.mamoki.tour.domain.attraction.dto.OnlineMentionView;
 import com.mamoki.tour.domain.attraction.entity.Attraction;
+import com.mamoki.tour.domain.attraction.repository.AttractionCatalogImportRepository;
 import com.mamoki.tour.domain.attraction.repository.AttractionRepository;
 import com.mamoki.tour.domain.attraction.service.AttractionService;
 import com.mamoki.tour.domain.attraction.service.CenterRankService;
 import com.mamoki.tour.domain.attraction.service.SignalLookupService;
+import com.mamoki.tour.domain.attraction.service.SignalLookupService.ActiveSignalVersions;
 import com.mamoki.tour.domain.cache.dto.CachedResponse;
 import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
 import com.mamoki.tour.domain.region.entity.RegionCode;
@@ -83,10 +85,18 @@ class AttractionServiceTest {
     private static final String SOKCHO_SIGUNGU = "5";
 
     private static final LocalDateTime CATALOG_CHANGED_AT = LocalDateTime.of(2026, 9, 18, 3, 0);
+
+    /** 마지막으로 적재를 마친 시각. 내용이 바뀐 시각보다 뒤다 — 그 사이 재적재가 있었다(#69). */
+    private static final LocalDateTime CATALOG_IMPORTED_AT = LocalDateTime.of(2026, 9, 19, 2, 0);
     private static final LocalDateTime PROVIDER_COLLECTED_AT = LocalDateTime.of(2026, 9, 19, 9, 0);
+
+    /** 지금 활성인 스냅샷들. 캐시 키가 이것으로 값의 나이를 가른다(#71). */
+    private static final ActiveSignalVersions SIGNAL_VERSIONS =
+            new ActiveSignalVersions(11L, 22L, 33L);
 
     private AttractionService attractionService;
     private AttractionRepository attractionRepository;
+    private AttractionCatalogImportRepository catalogImportRepository;
     private KorServiceClient korServiceClient;
     private ExternalApiCacheService cacheService;
     private RegionCodeRepository regionCodeRepository;
@@ -100,6 +110,7 @@ class AttractionServiceTest {
     @BeforeEach
     void setUp() {
         attractionRepository = Mockito.mock(AttractionRepository.class);
+        catalogImportRepository = Mockito.mock(AttractionCatalogImportRepository.class);
         korServiceClient = Mockito.mock(KorServiceClient.class);
         cacheService = Mockito.mock(ExternalApiCacheService.class);
         regionCodeRepository = Mockito.mock(RegionCodeRepository.class);
@@ -109,7 +120,7 @@ class AttractionServiceTest {
 
         attractionService = new AttractionService(korServiceClient, cacheService,
                 regionCodeRepository, centerRankService, signalLookupService,
-                visitTimingService, attractionRepository);
+                visitTimingService, attractionRepository, catalogImportRepository);
 
         given(regionCodeRepository.findAllByAreaCode("32"))
                 .willReturn(List.of(region(GANGNEUNG_LAWD, GANGNEUNG_SIGUNGU, "강릉시"),
@@ -125,6 +136,7 @@ class AttractionServiceTest {
         given(signalLookupService.findTmapRanks(any())).willReturn(Map.of());
         given(signalLookupService.findVisitorStats(any())).willReturn(Optional.empty());
         given(signalLookupService.findMentionRuleVersion()).willReturn(Optional.of("name+sigungu"));
+        given(signalLookupService.activeSignalVersions()).willReturn(SIGNAL_VERSIONS);
         given(signalLookupService.findOnlineMentions(any())).willAnswer(invocation -> {
             Collection<String> contentIds = invocation.getArgument(0);
             Map<String, OnlineMentionView> views = new HashMap<>();
@@ -146,6 +158,7 @@ class AttractionServiceTest {
         given(visitTimingService.resolve(any(), any(), any())).willReturn(Map.of());
 
         given(attractionRepository.findLatestCatalogChangeAt()).willReturn(CATALOG_CHANGED_AT);
+        given(catalogImportRepository.findLatestCompletedAt()).willReturn(CATALOG_IMPORTED_AT);
     }
 
     // --- 카탈로그 전수 정렬 ---------------------------------------------------
@@ -408,12 +421,13 @@ class AttractionServiceTest {
                 sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20));
 
         assertThat(response.sort()).isEqualTo(AttractionSort.ONLINE_MENTION_DESC);
+        assertThat(response.sortApplied()).isTrue();
         assertThat(response.page()).isEqualTo(1);
         assertThat(response.size()).isEqualTo(20);
         assertThat(response.dataStatus()).isEqualTo(DataStatus.AVAILABLE);
         assertThat(response.source()).isEqualTo("KorService2");
-        // 카탈로그 내용이 마지막으로 바뀜 시각. 서버가 응답을 만든 시각이 아니다.
-        assertThat(response.collectedAt()).isEqualTo(CATALOG_CHANGED_AT);
+        // 카탈로그를 마지막으로 적재한 시각. 서버가 응답을 만든 시각이 아니다.
+        assertThat(response.collectedAt()).isEqualTo(CATALOG_IMPORTED_AT);
 
         AttractionResponse item = response.items().get(0);
         assertThat(item.regionName()).isEqualTo("강릉시");
@@ -786,12 +800,14 @@ class AttractionServiceTest {
     }
 
     /**
-     * 언급량 스냅샷이 없으면 정렬 기준이 없다. 서비스 주석은 이때 "순서를 만들어내지 않고
-     * 공급자 순서를 그대로 쓴다"고 적고 있지만, 실제로는 정렬 불가 항목을 이름 오름차순으로
-     * 다시 줄 세운다. 별도 이슈(#65)로 올렸고, 여기서는 지금 동작을 못 박아 둔다.
+     * 언급량 스냅샷이 없으면 정렬 기준이 없다. 그때는 순서를 만들어내지 않고 공급자 순서를
+     * 그대로 쓴다(#65).
+     *
+     * <p>예전에는 정렬 불가 항목을 이름 오름차순으로 다시 줄 세웠다. 응답의 {@code sort} 는
+     * 요청한 기준을 그대로 싣고 있어서, 프론트에서는 가나다순 목록이 언급량 순으로 읽혔다.
      */
     @Test
-    @DisplayName("폴백인데 언급량 스냅샷이 없으면 이름 오름차순으로 줄 세운다")
+    @DisplayName("폴백인데 언급량 스냅샷이 없으면 공급자 순서를 그대로 둔다")
     void fallbackKeepsProviderOrderWithoutMentionSnapshot() {
         given(attractionRepository.findLatestCatalogChangeAt()).willReturn(null);
         // 이미 등록해 둔 answer 가 given(...) 안에서 실행되지 않도록 반대 순서로 덮는다.
@@ -805,12 +821,216 @@ class AttractionServiceTest {
         AttractionListResponse response = attractionService.search(
                 sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20));
 
-        // 공급자가 준 순서는 9001, 9002, 9003 이었다.
+        // 공급자가 준 순서 그대로다. 이름순으로 다시 줄 세우지 않는다.
         assertThat(response.items()).extracting(AttractionResponse::name)
-                .containsExactly("경포해변", "속초해변", "주문진해변");
-        // 다만 각 항목의 상태로 "정렬 기준이 없다"는 사실은 전달된다.
+                .containsExactly("속초해변", "경포해변", "주문진해변");
+        // 각 항목의 상태에 더해, 목록 수준에서도 정렬을 적용하지 못했다는 사실을 알린다.
         assertThat(response.items()).allSatisfy(item ->
                 assertThat(item.onlineMention().status()).isEqualTo(MentionStatus.COLLECTION_FAILED));
+        assertThat(response.sortApplied()).isFalse();
+        // 요청한 기준은 그대로 반향한다. 무엇을 요청했는지는 프론트가 알아야 한다.
+        assertThat(response.sort()).isEqualTo(AttractionSort.ONLINE_MENTION_DESC);
+    }
+
+    // --- 읽어 둔 카탈로그 다시 쓰기 (#71) -----------------------------------------
+
+    @Test
+    @DisplayName("같은 조건을 다시 물으면 카탈로그도 신호도 다시 읽지 않는다")
+    void repeatedQueryReadsNothingAgain() {
+        givenCatalog(catalogOf(50));
+        attractionService.search(sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20));
+
+        Mockito.clearInvocations(attractionRepository, signalLookupService);
+        AttractionListResponse second = attractionService.search(
+                sortRequest(AttractionSort.ONLINE_MENTION_DESC, 2, 20));
+
+        // 두 번째 페이지도 제대로 나온다. 읽기만 건너뛴 것이지 결과가 줄지 않는다.
+        assertThat(second.items()).hasSize(20);
+        assertThat(second.totalCount()).isEqualTo(50);
+        assertThat(second.collectedAt()).isEqualTo(CATALOG_IMPORTED_AT);
+        verifyNoInteractions(attractionRepository);
+        verify(signalLookupService, never()).findOnlineMentions(any());
+        verify(signalLookupService, never()).findTmapRanks(any());
+        verify(signalLookupService, never()).findVisitorStats(any());
+    }
+
+    @Test
+    @DisplayName("지도만 밀어 경계가 달라져도 읽어 둔 카탈로그를 다시 쓴다")
+    void movingTheMapReusesTheSameRead() {
+        given(attractionRepository.findAllWithRegion()).willReturn(List.of(
+                attraction("west", "서쪽", GANGNEUNG_LAWD, "12",
+                        new BigDecimal("37.7"), new BigDecimal("128.8")),
+                attraction("east", "동쪽", GANGNEUNG_LAWD, "12",
+                        new BigDecimal("37.7"), new BigDecimal("128.95"))));
+        mentionCounts.put("west", 10L);
+        mentionCounts.put("east", 20L);
+
+        attractionService.search(boundsRequest(new BigDecimal("128.7"), new BigDecimal("128.9")));
+        Mockito.clearInvocations(attractionRepository, signalLookupService);
+
+        AttractionListResponse moved = attractionService.search(
+                boundsRequest(new BigDecimal("128.9"), new BigDecimal("129.0")));
+
+        assertThat(moved.items()).extracting(AttractionResponse::contentId).containsExactly("east");
+        verifyNoInteractions(attractionRepository);
+    }
+
+    @Test
+    @DisplayName("스냅샷을 교체하면 읽어 둔 값을 쓰지 않는다")
+    void snapshotReplacementInvalidates() {
+        givenCatalog(catalogOf(3));
+        attractionService.search(sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20));
+
+        Mockito.clearInvocations(attractionRepository, signalLookupService);
+        given(signalLookupService.activeSignalVersions())
+                .willReturn(new ActiveSignalVersions(12L, 22L, 33L));
+        attractionService.search(sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20));
+
+        verify(attractionRepository).findAllWithRegion();
+        verify(signalLookupService).findOnlineMentions(any());
+    }
+
+    @Test
+    @DisplayName("카탈로그를 다시 적재하면 읽어 둔 값을 쓰지 않는다")
+    void reimportInvalidates() {
+        givenCatalog(catalogOf(3));
+        attractionService.search(sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20));
+
+        Mockito.clearInvocations(attractionRepository, signalLookupService);
+        given(catalogImportRepository.findLatestCompletedAt())
+                .willReturn(CATALOG_IMPORTED_AT.plusDays(1));
+        AttractionListResponse after = attractionService.search(
+                sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20));
+
+        verify(attractionRepository).findAllWithRegion();
+        assertThat(after.collectedAt()).isEqualTo(CATALOG_IMPORTED_AT.plusDays(1));
+    }
+
+    @Test
+    @DisplayName("조회 조건이 다르면 읽어 둔 값을 쓰지 않는다")
+    void differentConditionsDoNotShareTheRead() {
+        givenCatalog(catalogOf(3));
+        attractionService.search(sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20));
+
+        Mockito.clearInvocations(attractionRepository);
+        // 분류만 달라져도 대상이 다른 집합이다.
+        attractionService.search(new AttractionSearchRequest(
+                null, "12", 1, 20, AttractionSort.ONLINE_MENTION_DESC, null, null,
+                null, null, null, null));
+
+        verify(attractionRepository).findAllWithRegion();
+    }
+
+    @Test
+    @DisplayName("적재 이력이 없으면 무효화 신호가 없어 읽어 두지 않는다")
+    void doesNotCacheWithoutImportHistory() {
+        given(catalogImportRepository.findLatestCompletedAt()).willReturn(null);
+        givenCatalog(catalogOf(3));
+        attractionService.search(sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20));
+
+        Mockito.clearInvocations(attractionRepository);
+        attractionService.search(sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20));
+
+        verify(attractionRepository).findAllWithRegion();
+    }
+
+    // --- 기준 시점 (#69) ---------------------------------------------------------
+
+    /**
+     * 내용이 같은 재적재는 {@code attraction.modified_at} 을 밀지 않는다. 그래서 기준 시점은
+     * 카탈로그 변경 시각이 아니라 마지막 적재 이력의 시각이다(#69).
+     */
+    @Test
+    @DisplayName("카탈로그 조회의 기준 시점은 마지막으로 적재를 마친 시각이다")
+    void collectedAtComesFromTheLastImport() {
+        givenCatalog(catalogOf(3));
+
+        AttractionListResponse response = attractionService.search(
+                sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20));
+
+        assertThat(response.collectedAt()).isEqualTo(CATALOG_IMPORTED_AT);
+        assertThat(response.collectedAt()).isNotEqualTo(CATALOG_CHANGED_AT);
+    }
+
+    @Test
+    @DisplayName("적재 이력이 없으면 지금까지 쓰던 카탈로그 변경 시각을 그대로 쓴다")
+    void collectedAtFallsBackToCatalogChangeWithoutHistory() {
+        // 이 이력이 생기기 전에 적재한 환경. 카탈로그는 가득한데 이력이 한 줄도 없다.
+        given(catalogImportRepository.findLatestCompletedAt()).willReturn(null);
+        givenCatalog(catalogOf(3));
+
+        AttractionListResponse response = attractionService.search(
+                sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20));
+
+        assertThat(response.collectedAt()).isEqualTo(CATALOG_CHANGED_AT);
+        // 이력이 없다고 공급자로 내려가지 않는다. 카탈로그가 비어 있는 것과 다르다.
+        assertThat(response.items()).hasSize(3);
+        verifyNoInteractions(cacheService);
+    }
+
+    @Test
+    @DisplayName("카탈로그가 비어 있으면 적재 이력이 있어도 공급자 기준 시점을 쓴다")
+    void providerFallbackKeepsProviderCollectedAt() {
+        given(attractionRepository.findLatestCatalogChangeAt()).willReturn(null);
+        givenProviderPage(providerItem("9001", "속초해변"));
+
+        AttractionListResponse response = attractionService.search(
+                sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20));
+
+        assertThat(response.collectedAt()).isEqualTo(PROVIDER_COLLECTED_AT);
+    }
+
+    // --- 정렬을 적용했는지 (#65) --------------------------------------------------
+
+    @Test
+    @DisplayName("카탈로그 정렬도 언급량 스냅샷이 없으면 카탈로그 기본 순서를 그대로 둔다")
+    void catalogKeepsCatalogOrderWithoutMentionSnapshot() {
+        willReturn(Optional.empty()).given(signalLookupService).findOnlineMentions(any());
+        given(signalLookupService.findMentionRuleVersion()).willReturn(Optional.empty());
+        given(attractionRepository.findAllWithRegion()).willReturn(List.of(
+                attraction("9001", "속초해변", GANGNEUNG_LAWD, "12",
+                        new BigDecimal("37.7"), new BigDecimal("128.8")),
+                attraction("9002", "경포해변", GANGNEUNG_LAWD, "12",
+                        new BigDecimal("37.7"), new BigDecimal("128.8"))));
+
+        AttractionListResponse response = attractionService.search(
+                sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20));
+
+        // 카탈로그 기본 순서는 표준 관광지명 오름차순이다. 요청한 정렬과는 무관하다.
+        assertThat(response.items()).extracting(AttractionResponse::name)
+                .containsExactly("경포해변", "속초해변");
+        assertThat(response.sortApplied()).isFalse();
+    }
+
+    @Test
+    @DisplayName("산정된 장소가 하나라도 있으면 정렬을 적용하고 그 사실을 알린다")
+    void sortAppliedWhenAtLeastOnePlaceIsSortable() {
+        mentionStatuses.put(contentId(1), MentionStatus.COLLECTION_FAILED);
+        givenCatalog(catalogOf(2));
+
+        AttractionListResponse response = attractionService.search(
+                sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20));
+
+        assertThat(response.sortApplied()).isTrue();
+        // 산정된 장소가 앞에 서고, 산정되지 않은 장소는 뒤에 붙는다.
+        assertThat(response.items()).extracting(AttractionResponse::contentId)
+                .containsExactly(contentId(2), contentId(1));
+    }
+
+    @Test
+    @DisplayName("정렬을 요청하지 않으면 적용할 정렬도 없다")
+    void sortNotAppliedWhenNotRequested() {
+        given(attractionRepository.findAllWithRegion()).willReturn(List.of(
+                attraction("inside", "경계 안", GANGNEUNG_LAWD, "12",
+                        new BigDecimal("37.7"), new BigDecimal("128.8"))));
+
+        AttractionListResponse response = attractionService.search(new AttractionSearchRequest(
+                null, null, 1, 20, null, null, null,
+                new BigDecimal("37.6"), new BigDecimal("37.9"),
+                new BigDecimal("128.7"), new BigDecimal("129.0")));
+
+        assertThat(response.sort()).isNull();
+        assertThat(response.sortApplied()).isFalse();
     }
 
     // --- 도우미 ---------------------------------------------------------------
@@ -935,6 +1155,13 @@ class AttractionServiceTest {
         return new KorServiceItem(contentId, "12", name, "강원특별자치도", "",
                 "", "", "128.8500000", "37.7500000", "", "", "51", "150",
                 "", "20260901000000", "", "", "", "");
+    }
+
+    /** 경도만 움직이는 경계 조회. 지도를 옆으로 미는 것과 같다. */
+    private static AttractionSearchRequest boundsRequest(BigDecimal minLongitude,
+                                                         BigDecimal maxLongitude) {
+        return new AttractionSearchRequest(null, null, 1, 20, null, null, null,
+                new BigDecimal("37.6"), new BigDecimal("37.9"), minLongitude, maxLongitude);
     }
 
     private static AttractionSearchRequest sortRequest(AttractionSort sort, int page, int size) {

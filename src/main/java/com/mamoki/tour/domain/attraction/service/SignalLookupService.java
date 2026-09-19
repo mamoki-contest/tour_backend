@@ -87,6 +87,29 @@ public class SignalLookupService {
         return Optional.of(views);
     }
 
+    /**
+     * 지금 활성인 스냅샷들의 식별자.
+     *
+     * <p>신호 값이 아니라 <b>어느 스냅샷을 보고 있는지</b>만 묻는다. 스냅샷을 교체하면
+     * 식별자가 바뀌므로, 이 값이 같으면 앞서 읽은 신호가 아직 유효하다는 뜻이다.
+     * 정렬·경계 조회의 캐시 키가 쓴다(#71).
+     */
+    @Transactional(readOnly = true)
+    public ActiveSignalVersions activeSignalVersions() {
+        return new ActiveSignalVersions(
+                mentionSnapshotRepository.findByStatus(SnapshotStatus.ACTIVE)
+                        .map(OnlineMentionSnapshot::getId).orElse(null),
+                tmapSnapshotRepository.findByStatus(SnapshotStatus.ACTIVE)
+                        .map(TmapRankSnapshot::getId).orElse(null),
+                visitorStatsSnapshotRepository.findByStatus(SnapshotStatus.ACTIVE)
+                        .map(VisitorStatsSnapshot::getId).orElse(null));
+    }
+
+    /** 활성 스냅샷의 식별자들. 아직 적재하지 않은 신호는 null 이며, 그것도 하나의 상태다. */
+    public record ActiveSignalVersions(Long onlineMentionSnapshotId, Long tmapRankSnapshotId,
+                                       Long visitorStatsSnapshotId) {
+    }
+
     /** 활성 온라인 언급량 스냅샷의 검색어 규칙 버전. 스냅샷이 없으면 빈 값. */
     @Transactional(readOnly = true)
     public Optional<String> findMentionRuleVersion() {
