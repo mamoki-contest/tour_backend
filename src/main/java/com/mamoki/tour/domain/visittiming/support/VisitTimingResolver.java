@@ -16,61 +16,53 @@ import com.mamoki.tour.domain.visittiming.enums.VisitTimingStatus;
  * 집중률 예측을 장소 내부 상대 수준으로 해석하는 규칙.
  *
  * <p>공급자는 집중률의 공식 등급 기준을 제공하지 않는다. 그래서 값 자체를 한산·보통·혼잡으로
- * 끊을 근거가 없다. 대신 <b>그 장소의 향후 30일 분포</b> 안에서 어디쯤인지만 본다.
+ * 끊을 근거가 없다. 대신 <b>그 장소의 지원 범위 안 분포</b>에서 어디쯤인지만 본다.
  * 이렇게 하면 어떤 장소의 HIGH 와 다른 장소의 HIGH 를 비교할 수 없게 되는데, PRD 가
  * 금지한 절대 혼잡도 순위를 애초에 만들 수 없게 하려는 것이 목적이다.
+ *
+ * <p>판정할 날짜의 범위는 여기서 정하지 않는다. 공급자 응답에서 나온 {@link ForecastWindow}
+ * 를 받아 쓴다. 목록과 상세가 같은 창을 넘겨받으므로 두 화면의 판정이 어긋나지 않는다.
  *
  * <p>규칙은 다음 세 개다. 임의로 바꾸면 프론트 표시 문구와 어긋나므로 상수로 고정한다.
  * <ol>
  *   <li>정렬한 유효 예측의 하위 1/3 은 {@code LOW}, 상위 1/3 은 {@code HIGH}, 나머지는 {@code NORMAL}.
  *       경계값이 같으면 같은 등급이 되도록 순번이 아니라 값으로 끊는다.</li>
  *   <li>유효 예측일이 {@link #MIN_FORECAST_DAYS_FOR_LEVEL} 일 미만이면 판정하지 않고 {@code NO_DATA}.
- *       30일 창의 1/3 도 모이지 않은 분포로 상대 수준을 말할 수 없다.</li>
+ *       한 달 창의 1/3 도 모이지 않은 분포로 상대 수준을 말할 수 없다.</li>
  *   <li>같은 값이 분포의 대부분을 덮어 두 경계가 붙으면, 그 값은 이 장소의 보통({@code NORMAL})이고
  *       그보다 낮은 날만 {@code LOW}, 높은 날만 {@code HIGH} 다.
- *       유연 모드는 30일 예측이 모두 같을 때만 {@code NO_DATA} 다.
+ *       유연 모드는 예측이 모두 같을 때만 {@code NO_DATA} 다.
  *       더 한산한 날이 없는데 하나를 골라 주면 없는 한산함을 만들어내는 것이다.</li>
  * </ol>
  */
 public final class VisitTimingResolver {
 
-    /** 공급자가 제공하는 예측 범위. 조회일 포함 30일. */
-    public static final int FORECAST_WINDOW_DAYS = 30;
-
-    /** 이보다 적은 유효 예측일로는 분포를 신뢰할 수 없어 판정하지 않는다. 30일의 1/3. */
+    /**
+     * 이보다 적은 유효 예측일로는 분포를 신뢰할 수 없어 판정하지 않는다. 30일의 1/3.
+     *
+     * <p>지원 범위가 29일로 줄어도 이 기준은 그대로 둔다. 창 길이에 따라 최소치를 움직이면
+     * 같은 장소가 날마다 다른 이유로 판정되거나 되지 않는다.
+     */
     public static final int MIN_FORECAST_DAYS_FOR_LEVEL = 10;
 
     private VisitTimingResolver() {
     }
 
-    public static LocalDate supportedFrom(LocalDate today) {
-        return today;
-    }
-
-    public static LocalDate supportedTo(LocalDate today) {
-        return today.plusDays(FORECAST_WINDOW_DAYS - 1L);
-    }
-
-    public static boolean isSupported(LocalDate date, LocalDate today) {
-        return date != null
-                && !date.isBefore(supportedFrom(today))
-                && !date.isAfter(supportedTo(today));
-    }
-
     /**
-     * 날짜 확정 모드. 선택일을 그 장소 자신의 30일 분포 안에서 해석한다.
+     * 날짜 확정 모드. 선택일을 그 장소 자신의 분포 안에서 해석한다.
      *
      * @param forecast 이 장소의 예측. 매칭되지 않았으면 null 이며 정보 없음으로 처리한다.
+     * @param window   공급자 응답에서 나온 지원 범위
      */
     public static VisitTimingVerdict resolveFixed(AttractionForecast forecast,
-                                                  LocalDate selectedDate, LocalDate today) {
+                                                  LocalDate selectedDate, ForecastWindow window) {
 
         // 범위 밖은 데이터 문제가 아니라 요청 문제다. 예측을 보기 전에 먼저 가른다.
-        if (!isSupported(selectedDate, today)) {
+        if (!window.contains(selectedDate)) {
             return VisitTimingVerdict.outOfRange(selectedDate, 0);
         }
 
-        List<DailyConcentration> valid = validDays(forecast, today);
+        List<DailyConcentration> valid = validDays(forecast, window);
 
         if (valid.size() < MIN_FORECAST_DAYS_FOR_LEVEL) {
             return VisitTimingVerdict.noData(selectedDate, valid.size());
@@ -87,9 +79,11 @@ public final class VisitTimingResolver {
                 classify(selectedRate, sortedRates(valid)), selectedDate, null, valid.size());
     }
 
-    /** 날짜 유연 모드. 그 장소의 30일 중 상대적으로 한산한 예상일을 고른다. */
-    public static VisitTimingVerdict resolveFlexible(AttractionForecast forecast, LocalDate today) {
-        List<DailyConcentration> valid = validDays(forecast, today);
+    /** 날짜 유연 모드. 그 장소의 지원 범위 안에서 상대적으로 한산한 예상일을 고른다. */
+    public static VisitTimingVerdict resolveFlexible(AttractionForecast forecast,
+                                                     ForecastWindow window) {
+
+        List<DailyConcentration> valid = validDays(forecast, window);
 
         if (valid.size() < MIN_FORECAST_DAYS_FOR_LEVEL) {
             return VisitTimingVerdict.noData(null, valid.size());
@@ -113,25 +107,26 @@ public final class VisitTimingResolver {
     }
 
     /**
-     * 상세 화면용. 지원 범위 30일을 하루씩 모두 판정한다.
+     * 상세 화면용. 지원 범위를 하루씩 모두 판정한다.
      *
-     * <p>확정 모드를 30번 부른 것과 같은 결과가 나오도록 같은 분포·같은 경계를 쓴다. 날짜마다
-     * 따로 계산하면 분포가 달라져 목록 응답과 어긋날 수 있다.
+     * <p>확정 모드를 하루씩 부른 것과 같은 결과가 나오도록 같은 창·같은 분포·같은 경계를 쓴다.
+     * 날짜마다 따로 계산하면 분포가 달라져 목록 응답과 어긋날 수 있다.
      *
      * <p>예측이 없는 날은 이웃 값으로 메우지 않고 {@code NO_DATA} 로 남긴다. 유효 예측일이
-     * 판정 최소치에 못 미치면 30일 전체가 {@code NO_DATA} 다.
+     * 판정 최소치에 못 미치면 범위 전체가 {@code NO_DATA} 다.
      *
-     * @return 날짜 오름차순 30일. 지원 범위 밖은 담지 않는다.
+     * @return 날짜 오름차순. 지원 범위 밖은 담지 않으므로 창이 29일이면 29일이다.
      */
-    public static List<DailyVisitTiming> resolveDaily(AttractionForecast forecast, LocalDate today) {
-        List<DailyConcentration> valid = validDays(forecast, today);
+    public static List<DailyVisitTiming> resolveDaily(AttractionForecast forecast,
+                                                      ForecastWindow window) {
+
+        List<DailyConcentration> valid = validDays(forecast, window);
         boolean judgeable = valid.size() >= MIN_FORECAST_DAYS_FOR_LEVEL;
         List<BigDecimal> sorted = judgeable ? sortedRates(valid) : List.of();
 
-        List<DailyVisitTiming> daily = new ArrayList<>(FORECAST_WINDOW_DAYS);
+        List<DailyVisitTiming> daily = new ArrayList<>(window.days());
 
-        for (int offset = 0; offset < FORECAST_WINDOW_DAYS; offset++) {
-            LocalDate date = today.plusDays(offset);
+        for (LocalDate date : window.dates()) {
             BigDecimal rate = judgeable ? rateOf(valid, date) : null;
 
             daily.add(new DailyVisitTiming(date,
@@ -150,7 +145,7 @@ public final class VisitTimingResolver {
         BigDecimal lower = lowerBound(sorted);
         BigDecimal upper = upperBound(sorted);
 
-        // 같은 값이 30일의 3분의 2를 덮으면 두 경계가 붙는다. 이때 그 값은 이 장소의 보통이다.
+        // 같은 값이 창의 3분의 2를 덮으면 두 경계가 붙는다. 이때 그 값은 이 장소의 보통이다.
         // 모든 날의 예측이 같은 경우도 여기로 들어와 NORMAL 이 된다.
         if (lower.compareTo(upper) == 0) {
             int comparison = rate.compareTo(lower);
@@ -196,14 +191,16 @@ public final class VisitTimingResolver {
     }
 
     /** 지원 범위 안이면서 값이 있는 날만 판정에 쓴다. 범위 밖 날짜가 섞여 분포를 흔들지 않게 한다. */
-    private static List<DailyConcentration> validDays(AttractionForecast forecast, LocalDate today) {
+    private static List<DailyConcentration> validDays(AttractionForecast forecast,
+                                                      ForecastWindow window) {
+
         if (forecast == null || forecast.days() == null) {
             return List.of();
         }
 
         return forecast.days().stream()
                 .filter(day -> day.date() != null && day.hasRate())
-                .filter(day -> isSupported(day.date(), today))
+                .filter(day -> window.contains(day.date()))
                 .toList();
     }
 }

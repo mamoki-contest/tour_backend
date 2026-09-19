@@ -29,7 +29,7 @@ import com.mamoki.tour.infra.korservice.dto.KorServiceResponse;
 /**
  * 관광지 상세 조회.
  *
- * <p>기본정보·30일 예측·연관 장소를 각각 독립적으로 모아 하나의 응답으로 조립한다. 셋은 서로
+ * <p>기본정보·방문 혼잡도 예측·연관 장소를 각각 독립적으로 모아 하나의 응답으로 조립한다. 셋은 서로
  * 다른 공급자에서 오고 갱신 주기도 달라, 하나가 비어도 나머지를 채운다.
  *
  * <p>다만 <b>기본정보만은 예외</b>다. 기본정보를 얻지 못하면 무엇에 대한 상세인지 말할 수
@@ -67,7 +67,7 @@ public class AttractionDetailService {
     }
 
     /**
-     * @param today 지원 범위(오늘부터 30일)의 기준일
+     * @param today 지원 범위를 자를 기준일. 지난 날짜는 예측 범위에 담지 않는다.
      * @throws ServiceException 기본정보를 얻지 못한 경우 404
      */
     public AttractionDetailResponse getDetail(String contentId, LocalDate today) {

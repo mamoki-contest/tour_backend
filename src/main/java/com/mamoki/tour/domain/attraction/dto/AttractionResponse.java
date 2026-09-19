@@ -64,7 +64,7 @@ public record AttractionResponse(
 
         @Schema(description = """
                 날짜 탐색 결과. dateMode 를 지정하지 않은 요청에서는 null 입니다.
-                status 는 이 장소 자신의 30일 분포 안에서의 상대 수준이며,
+                status 는 이 장소 자신의 지원 범위 안 분포에서의 상대 수준이며,
                 다른 관광지의 status 와 비교해 혼잡도 순위로 쓰면 안 됩니다.""")
         VisitTiming visitTiming
 ) {
