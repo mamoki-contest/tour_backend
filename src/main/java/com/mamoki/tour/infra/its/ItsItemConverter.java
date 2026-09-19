@@ -63,7 +63,7 @@ public final class ItsItemConverter {
         Map<String, List<ItsItem>> byRoad = new LinkedHashMap<>();
 
         for (ItsItem item : items) {
-            String roadName = blankToNull(item.roadName());
+            String roadName = toRoadName(item.roadName());
 
             if (roadName != null) {
                 byRoad.computeIfAbsent(roadName, key -> new ArrayList<>()).add(item);
@@ -137,5 +137,26 @@ public final class ItsItemConverter {
 
     private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.strip();
+    }
+
+    /**
+     * 도로명으로 쓸 수 있는 값만 남기고 나머지는 이름 없음(null)으로 바꾼다.
+     *
+     * <p>공급자는 이름이 없는 구간을 빈 문자열이 아니라 {@code "-"} 로 내려준다(#64). 이름이
+     * 아니라 이름 없음의 표기인데 그대로 두면 화면에 "-" 라는 도로 한 줄이 생기고, 구간 수가
+     * 같을 때 도로명 오름차순으로 가르는 탓에 실제 도로를 상위 다섯 자리 밖으로 밀어낸다.
+     *
+     * <p>{@code "-"} 하나만 특별히 거르지 않고 <b>글자도 숫자도 없는 값</b>을 모두 이름 없음으로
+     * 본다. 공급자가 {@code "--"}·{@code "."} 같은 다른 표기를 쓰더라도 같은 규칙이 받아내며,
+     * 글자나 숫자가 하나라도 있으면(예: {@code "7번국도"}) 도로명으로 살아남는다.
+     */
+    private static String toRoadName(String value) {
+        String raw = blankToNull(value);
+
+        if (raw == null || raw.codePoints().noneMatch(Character::isLetterOrDigit)) {
+            return null;
+        }
+
+        return raw;
     }
 }

@@ -288,6 +288,11 @@ java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=parking-catalog --file="sampl
 안 됩니다.** 도심은 늘 느리고 외곽은 늘 빠르며 그것은 혼잡이 아니라 입지입니다.
 도로별 평균 통행시간은 `road.roads[].averageTravelTime` 에 초 단위로 들어 있습니다.
 
+**도로명이 없는 구간은 `road.roads` 목록에서 빼되 `linkCount`·`averageSpeed` 에는 넣습니다.**
+공급자는 이름 없는 구간을 `"-"` 로 내려주는데, 이는 이름이 아니라 이름 없음의 표기입니다.
+글자도 숫자도 없는 값(`-`, `--`, `.` 등)은 모두 이름 없음으로 보며, 이름이 없어도 그 구간의
+관측 자체는 유효하므로 구간 수와 평균 속도에는 그대로 셉니다.
+
 #### 주차 (`currentAccess.parking`)
 
 두 공급자를 겹쳐 씁니다. 하나만으로는 "주차장이 아예 없는 곳" 과 "주차장은 있으나 지금
