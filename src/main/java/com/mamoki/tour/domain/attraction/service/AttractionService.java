@@ -2,7 +2,9 @@ package com.mamoki.tour.domain.attraction.service;
 
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -21,6 +23,8 @@ import com.mamoki.tour.domain.attraction.dto.AttractionSort;
 import com.mamoki.tour.domain.attraction.dto.OnlineMentionView;
 import com.mamoki.tour.domain.attraction.dto.TmapRankView;
 import com.mamoki.tour.domain.attraction.dto.VisitorStatsView;
+import com.mamoki.tour.domain.attraction.entity.Attraction;
+import com.mamoki.tour.domain.attraction.repository.AttractionRepository;
 import com.mamoki.tour.domain.attraction.support.AttractionSortOrder;
 import com.mamoki.tour.domain.attraction.support.MapBounds;
 import com.mamoki.tour.domain.cache.dto.CachedResponse;
@@ -47,6 +51,12 @@ import com.mamoki.tour.infra.korservice.dto.KorServiceResponse;
  *
  * <p>정렬을 요청하면 현재 조회 범위 전체를 모아 정렬한 뒤 페이지를 나눈다. 한 페이지 안에서만
  * 정렬하면 공급자가 준 임의의 20건을 정렬하는 셈이라 순서에 의미가 없다.
+ *
+ * <p><b>범위 전체가 필요한 조회(정렬·지도 경계)는 DB 카탈로그를 대상으로 한다(#51).</b>
+ * 공급자 페이지를 끝까지 모으던 방식은 상한에서 잘려, 강원 전체를 정렬하면 카탈로그
+ * 4,700곳대 중 앞쪽 3,000곳만 줄 세우고 나머지는 경고 로그만 남기고 사라졌다. 카탈로그는
+ * 언급량 수집이 순회하는 바로 그 집합이라, 카탈로그를 대상으로 삼으면 언급량을 산정한
+ * 집합과 정렬하는 집합이 같아진다. 공급자 호출도 필요 없다.
  */
 @Service
 public class AttractionService {
@@ -65,14 +75,28 @@ public class AttractionService {
     private static final Duration CACHE_TTL = Duration.ofHours(24);
     private static final String OPERATION = "areaBasedList2";
 
-    /** 정렬을 위해 범위 전체를 모을 때 한 번에 받아오는 크기. */
+    /** 범위 전체를 공급자에서 모을 때 한 번에 받아오는 크기. */
     private static final int SORT_FETCH_SIZE = 100;
 
     /**
-     * 정렬 대상 상한. 강원 전체 관광지가 3천 건 이하라 이 값이면 범위 전체를 담는다.
-     * 넘어서면 공급자 순서 기준으로 잘리므로 정렬 결과가 범위 전체를 반영하지 못한다.
+     * 카탈로그가 비어 공급자로 폴백했을 때의 상한.
+     *
+     * <p>평소에는 쓰이지 않는다. 카탈로그를 아직 적재하지 않은 환경에서만 이 경로로 오며,
+     * 실측 카탈로그(4,700곳대)가 두 배로 늘어도 잘리지 않도록 잡았다. 공급자가 갑자기 훨씬
+     * 많은 값을 돌려줄 때 호출이 끝없이 늘어나지 않도록 두는 상한이다.
      */
-    private static final int SORT_MAX_ITEMS = 3_000;
+    private static final int PROVIDER_FALLBACK_MAX_ITEMS = 10_000;
+
+    /**
+     * 카탈로그에서 읽은 목록의 기본 순서.
+     *
+     * <p>정렬을 요청하지 않은 경계 조회도 페이지를 나눠야 해서 순서가 고정돼 있어야 한다.
+     * DB 가 돌려주는 순서에 맡기면 페이지를 넘길 때 같은 항목이 두 번 나오거나 빠진다.
+     */
+    private static final Comparator<Attraction> CATALOG_ORDER =
+            Comparator.comparing(Attraction::getName, Comparator.nullsLast(String::compareTo))
+                    .thenComparing(Attraction::getContentId,
+                            Comparator.nullsLast(String::compareTo));
 
     private static final Logger log = LoggerFactory.getLogger(AttractionService.class);
 
@@ -82,6 +106,7 @@ public class AttractionService {
     private final CenterRankService centerRankService;
     private final SignalLookupService signalLookupService;
     private final VisitTimingService visitTimingService;
+    private final AttractionRepository attractionRepository;
     private final AttractionSortOrder sortOrder = new AttractionSortOrder();
 
     public AttractionService(KorServiceClient korServiceClient,
@@ -89,13 +114,15 @@ public class AttractionService {
                              RegionCodeRepository regionCodeRepository,
                              CenterRankService centerRankService,
                              SignalLookupService signalLookupService,
-                             VisitTimingService visitTimingService) {
+                             VisitTimingService visitTimingService,
+                             AttractionRepository attractionRepository) {
         this.korServiceClient = korServiceClient;
         this.cacheService = cacheService;
         this.regionCodeRepository = regionCodeRepository;
         this.centerRankService = centerRankService;
         this.signalLookupService = signalLookupService;
         this.visitTimingService = visitTimingService;
+        this.attractionRepository = attractionRepository;
     }
 
     /**
@@ -115,7 +142,7 @@ public class AttractionService {
         int page = request.pageOrDefault();
         int size = request.sizeOrDefault();
 
-        Fetched fetched = fetchPage(request, page, size);
+        Fetched fetched = fetchPage(request, toLawdSigunguCode(request.sigunguCode()), page, size);
 
         if (fetched.isEmpty()) {
             return AttractionListResponse.noData(page, size, KorServiceItemConverter.SOURCE, null);
@@ -128,16 +155,60 @@ public class AttractionService {
     }
 
     /**
-     * 조회 범위 전체를 모아 경계로 거르고 정렬한 뒤 페이지를 나눈다.
+     * 범위 전체가 필요한 조회. 카탈로그를 대상으로 하고, 카탈로그가 비어 있을 때만 공급자로 간다.
+     *
+     * <p>시·군구 코드 검증은 어느 경로로 가든 먼저 한다. 매핑이 없는 코드를 거르지 못한 채
+     * 강원 전체를 돌려주면 사용자가 지정한 조건이 조용히 무시된다.
+     */
+    private AttractionListResponse searchWholeRange(AttractionSearchRequest request) {
+        RegionCode region = resolveRegion(request.sigunguCode());
+        LocalDateTime catalogImportedAt = attractionRepository.findLatestImportedAt();
+
+        if (catalogImportedAt == null) {
+            // 카탈로그를 아직 적재하지 않은 환경. 공급자에게 물으면 답이 있으므로 NO_DATA 로
+            // 위장하지 않는다. 다만 이 경로는 상한에서 잘릴 수 있으니 흔적을 남긴다.
+            log.warn("관광지 카탈로그가 비어 있어 공급자 응답으로 정렬합니다. "
+                    + "--job=catalog 로 카탈로그를 먼저 적재하세요.");
+            return searchWholeRangeFromProvider(request, region);
+        }
+
+        return searchWholeRangeFromCatalog(request, region, catalogImportedAt);
+    }
+
+    /**
+     * 카탈로그를 조회 조건으로 좁혀 경계로 거르고 정렬한 뒤 페이지를 나눈다.
+     *
+     * <p>조건에 맞는 장소가 없는 것은 정보 없음이 아니다. {@code AVAILABLE} + 빈 목록으로
+     * 돌려줘, 프론트가 `조건에 맞는 곳이 없음`과 `데이터를 얻지 못함`을 구분할 수 있게 한다.
+     */
+    private AttractionListResponse searchWholeRangeFromCatalog(AttractionSearchRequest request,
+                                                               RegionCode region,
+                                                               LocalDateTime catalogImportedAt) {
+        int page = request.pageOrDefault();
+        int size = request.sizeOrDefault();
+
+        List<AttractionSnapshot> catalog = readCatalog(region, request.contentTypeId());
+        List<AttractionSnapshot> withinBounds = filterByBounds(catalog, request.bounds());
+
+        List<AttractionResponse> ordered = orderBySort(toResponses(withinBounds, request), request.sort());
+
+        return new AttractionListResponse(pageOf(ordered, page, size), ordered.size(), page, size,
+                request.sort(), DataStatus.AVAILABLE, catalogImportedAt,
+                KorServiceItemConverter.SOURCE);
+    }
+
+    /**
+     * 카탈로그가 비어 있을 때만 쓰는 공급자 경로.
      *
      * <p>활성 언급량 스냅샷이 없으면 정렬 기준 자체가 없다. 그때는 순서를 만들어내지 않고
      * 공급자 순서를 그대로 쓰며, 각 항목의 상태로 그 사실을 알린다.
      */
-    private AttractionListResponse searchWholeRange(AttractionSearchRequest request) {
+    private AttractionListResponse searchWholeRangeFromProvider(AttractionSearchRequest request,
+                                                                RegionCode region) {
         int page = request.pageOrDefault();
         int size = request.sizeOrDefault();
 
-        Fetched fetched = fetchWholeRange(request);
+        Fetched fetched = fetchWholeRange(request, toLawdSigunguCode(region));
 
         if (fetched.isEmpty()) {
             return AttractionListResponse.noData(page, size, KorServiceItemConverter.SOURCE, request.sort());
@@ -146,17 +217,49 @@ public class AttractionService {
         // 신호 조회와 정렬 전에 거른다. 경계 밖 장소의 언급량까지 찾을 이유가 없다.
         List<AttractionSnapshot> withinBounds = filterByBounds(fetched.snapshots(), request.bounds());
 
-        List<AttractionResponse> all = toResponses(withinBounds, request);
+        List<AttractionResponse> ordered = orderBySort(toResponses(withinBounds, request), request.sort());
 
-        // 경계만 준 요청은 정렬 기준이 없다. 공급자 순서를 그대로 두고 거르기만 한다.
-        List<AttractionResponse> ordered = request.sort() == null
-                ? all
-                : sortOrder.order(all, request.sort());
+        return new AttractionListResponse(pageOf(ordered, page, size), ordered.size(), page, size,
+                request.sort(), fetched.status(), fetched.collectedAt(),
+                KorServiceItemConverter.SOURCE);
+    }
 
-        List<AttractionResponse> paged = pageOf(ordered, page, size);
+    /** 경계만 준 요청은 정렬 기준이 없다. 순서를 만들어내지 않고 들어온 순서를 그대로 둔다. */
+    private List<AttractionResponse> orderBySort(List<AttractionResponse> items, AttractionSort sort) {
+        return sort == null ? items : sortOrder.order(items, sort);
+    }
 
-        return new AttractionListResponse(paged, ordered.size(), page, size, request.sort(),
-                fetched.status(), fetched.collectedAt(), KorServiceItemConverter.SOURCE);
+    /**
+     * 조회 조건에 맞는 카탈로그를 읽어 표준 계약으로 옮긴다.
+     *
+     * <p>분류 필터는 메모리에서 건다. 카탈로그가 강원 전체라도 5천 건 규모라 한 번에 읽어도
+     * 되고, 조건별 쿼리를 늘리는 것보다 필터가 한자리에 모이는 편이 낫다.
+     */
+    private List<AttractionSnapshot> readCatalog(RegionCode region, String contentTypeId) {
+        List<Attraction> rows = region == null
+                ? attractionRepository.findAllWithRegion()
+                : attractionRepository.findAllWithRegionByLawdCode(region.getLawdCode());
+
+        return rows.stream()
+                .filter(row -> contentTypeId == null || contentTypeId.equals(row.getContentTypeId()))
+                .sorted(CATALOG_ORDER)
+                .map(AttractionService::toSnapshot)
+                .toList();
+    }
+
+    /** 카탈로그 행을 목록·검색이 공유하는 표준 계약으로 옮긴다. 값을 만들어 채우지 않는다. */
+    private static AttractionSnapshot toSnapshot(Attraction row) {
+        return new AttractionSnapshot(
+                row.getContentId(),
+                row.getName(),
+                row.getImageUrl(),
+                row.getAddress(),
+                row.getLatitude(),
+                row.getLongitude(),
+                row.getContentTypeId(),
+                row.getRegionCode() == null ? null : row.getRegionCode().getLawdCode(),
+                row.getBaseAt(),
+                row.getSource());
     }
 
     /** 좌표가 없는 장소는 경계 안이라고 단정할 수 없어 뺀다. 경계를 주지 않았으면 그대로 둔다. */
@@ -253,24 +356,32 @@ public class AttractionService {
     }
 
     /**
-     * 공개 파라미터인 관광공사 시·군구 코드를 공급자에게 보낼 법정동 코드로 옮긴다.
+     * 공개 파라미터인 관광공사 시·군구 코드로 지역 매핑을 찾는다.
      *
      * <p>프론트가 보내는 값의 의미는 그대로 두고 안에서만 바꾼다. 파라미터를 법정동 코드로
      * 바꾸면 이미 쓰고 있는 쪽이 전부 깨진다.
      *
-     * @return 법정동 시·군구 코드 3자리. 시·군을 지정하지 않았으면 null.
+     * @return 시·군을 지정하지 않았으면 null.
      * @throws ServiceException 매핑이 없는 시·군구 코드인 경우. 거르지 못한 채 강원 전체를
      *                          돌려주면 사용자가 지정한 조건이 조용히 무시된다.
      */
-    private String toLawdSigunguCode(String sigunguCode) {
+    private RegionCode resolveRegion(String sigunguCode) {
         if (sigunguCode == null) {
             return null;
         }
 
         return regionCodeRepository.findByAreaCodeAndSigunguCode(GANGWON_AREA_CODE, sigunguCode)
-                .map(region -> region.getLawdCode().substring(2))
                 .orElseThrow(() -> new ServiceException(ResultCodes.INVALID_REQUEST,
                         "알 수 없는 시·군구 코드입니다: " + sigunguCode));
+    }
+
+    /** @return 공급자에게 보낼 법정동 시·군구 코드 3자리. 시·군을 지정하지 않았으면 null. */
+    private String toLawdSigunguCode(String sigunguCode) {
+        return toLawdSigunguCode(resolveRegion(sigunguCode));
+    }
+
+    private static String toLawdSigunguCode(RegionCode region) {
+        return region == null ? null : region.getLawdCode().substring(2);
     }
 
     /**
@@ -297,8 +408,8 @@ public class AttractionService {
         return regionCode == null ? null : regionCode.getName();
     }
 
-    private Fetched fetchPage(AttractionSearchRequest request, int page, int size) {
-        String lawdSigunguCode = toLawdSigunguCode(request.sigunguCode());
+    private Fetched fetchPage(AttractionSearchRequest request, String lawdSigunguCode,
+                              int page, int size) {
 
         String requestKey = korServiceClient.areaBasedListByLawdKey(
                 GANGWON_LAWD_REGION_CODE, lawdSigunguCode, request.contentTypeId(), page, size);
@@ -327,10 +438,10 @@ public class AttractionService {
                 parsed.totalCount(), cached.status(), cached.collectedAt());
     }
 
-    /** 정렬 대상을 모으기 위해 조회 범위의 모든 페이지를 받아온다. */
-    private Fetched fetchWholeRange(AttractionSearchRequest request) {
+    /** 카탈로그가 비어 있을 때만 쓴다. 조회 범위의 모든 페이지를 공급자에서 받아온다. */
+    private Fetched fetchWholeRange(AttractionSearchRequest request, String lawdSigunguCode) {
         List<AttractionSnapshot> all = new ArrayList<>();
-        Fetched first = fetchPage(request, 1, SORT_FETCH_SIZE);
+        Fetched first = fetchPage(request, lawdSigunguCode, 1, SORT_FETCH_SIZE);
 
         if (first.isEmpty()) {
             return first;
@@ -338,11 +449,11 @@ public class AttractionService {
 
         all.addAll(first.snapshots());
 
-        int totalCount = Math.min(first.totalCount(), SORT_MAX_ITEMS);
+        int totalCount = Math.min(first.totalCount(), PROVIDER_FALLBACK_MAX_ITEMS);
         DataStatus status = first.status();
 
         for (int page = 2; all.size() < totalCount; page++) {
-            Fetched next = fetchPage(request, page, SORT_FETCH_SIZE);
+            Fetched next = fetchPage(request, lawdSigunguCode, page, SORT_FETCH_SIZE);
 
             if (next.isEmpty() || next.snapshots().isEmpty()) {
                 break;
@@ -356,9 +467,9 @@ public class AttractionService {
             }
         }
 
-        if (first.totalCount() > SORT_MAX_ITEMS) {
-            log.warn("정렬 대상이 상한을 넘었습니다. totalCount={}, 상한={}",
-                    first.totalCount(), SORT_MAX_ITEMS);
+        if (first.totalCount() > PROVIDER_FALLBACK_MAX_ITEMS) {
+            log.warn("공급자 폴백 정렬 대상이 상한을 넘었습니다. totalCount={}, 상한={}",
+                    first.totalCount(), PROVIDER_FALLBACK_MAX_ITEMS);
         }
 
         return new Fetched(all, all.size(), status, first.collectedAt());
@@ -366,7 +477,7 @@ public class AttractionService {
 
     /** 공급자에서 받아온 한 묶음과 그 데이터 상태. */
     private record Fetched(List<AttractionSnapshot> snapshots, int totalCount,
-                           DataStatus status, java.time.LocalDateTime collectedAt) {
+                           DataStatus status, LocalDateTime collectedAt) {
 
         static Fetched empty() {
             return new Fetched(List.of(), 0, DataStatus.NO_DATA, null);
