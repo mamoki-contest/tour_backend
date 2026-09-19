@@ -3,7 +3,9 @@ package com.mamoki.tour.global.enums;
 /**
  * 외부 데이터 공급자.
  *
- * <p>PRD 가 확정한 공급자만 둔다. 카카오맵은 프론트 전용이라 포함하지 않는다.
+ * <p>PRD 가 확정한 공급자만 둔다. 카카오맵 JavaScript SDK 는 프론트 전용이라 포함하지 않는다.
+ * {@link #KAKAO_LOCAL} 은 지도 표시가 아니라 공급자 간 장소 매핑(#55)에만 쓰는 서버 전용
+ * REST API 라 별개다.
  */
 public enum ApiProvider {
 
@@ -32,5 +34,8 @@ public enum ApiProvider {
     TS_PARKING,
 
     /** 네이버 블로그 검색. 온라인 언급량 정렬의 주 지표. */
-    NAVER_BLOG_SEARCH
+    NAVER_BLOG_SEARCH,
+
+    /** 카카오 로컬 키워드 검색. 원천 이름을 좌표로 옮겨 카탈로그에 잇는 데만 쓴다. */
+    KAKAO_LOCAL
 }
