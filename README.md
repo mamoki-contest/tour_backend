@@ -14,6 +14,10 @@ CREATE DATABASE tour CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE DATABASE tour_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
+테스트 스키마 이름은 `tour_test` 로 시작하기만 하면 됩니다.
+여러 갈래를 동시에 돌릴 때는 `tour_test_62` 처럼 접미어를 붙여 나누고
+`TEST_DB_NAME` 으로 가리킵니다.
+
 ### 2. 환경변수 설정
 
 `.env.example` 을 `.env` 로 복사한 뒤 각자 환경에 맞게 채웁니다.
@@ -23,14 +27,53 @@ CREATE DATABASE tour_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 cp .env.example .env
 ```
 
+**값이 비어 있는 줄은 지정하지 않은 것으로 봅니다.** `DATA_LAB_LAG_DAYS=` 처럼 두면
+기본값 30 이 적용됩니다. `.env` 파일과 운영체제 환경변수(도커 `env_file` 포함) 양쪽에
+같은 규칙이 적용됩니다. 스프링 기본 동작은 빈 문자열도 "설정된 값"으로 보기 때문에,
+`BlankValueEnvironmentPostProcessor` 가 바인딩 전에 빈 값을 지워 이 규칙을 만듭니다.
+
+그래서 `.env.example` 을 그대로 복사해도 앱이 뜹니다. 채워야 하는 것은 DB 접속 정보뿐이고,
+외부 API 키는 비어 있으면 그 공급자만 정보 없음으로 내려갑니다.
+
+반드시 채우는 값:
+
 | 변수 | 설명 |
 | --- | --- |
 | `DB_HOST` | MySQL 호스트 |
 | `DB_PORT` | MySQL 포트 |
 | `DB_NAME` | 개발용 스키마 (`tour`) |
-| `DB_USERNAME` | 계정 |
-| `DB_PASSWORD` | 비밀번호 |
-| `TEST_DB_NAME` | 테스트용 스키마 (`tour_test`) |
+| `DB_USERNAME` | 계정. 비우면 기동이 멈춥니다 |
+| `DB_PASSWORD` | 비밀번호. 비밀번호 없는 계정이면 비워 둡니다 |
+| `TEST_DB_NAME` | 테스트용 스키마. `tour_test` 로 시작해야 합니다 |
+
+발급받아 채우는 키 (비우면 해당 공급자만 정보 없음):
+
+| 변수 | 설명 |
+| --- | --- |
+| `KOR_SERVICE_KEY` | 공공데이터포털 Encoding 키. 5개 서비스가 공유합니다 |
+| `NAVER_API_HUB_KEY_ID`, `NAVER_API_HUB_KEY` | NAVER API HUB 검색 API |
+| `KAKAO_REST_API_KEY` | 카카오 Local REST API |
+| `ITS_API_KEY` | 국가교통정보센터. 공공데이터포털과 무관한 별도 포털입니다 |
+
+비워 두면 기본값을 쓰는 값:
+
+| 변수 | 기본값 | 언제 지정하나 |
+| --- | --- | --- |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` | 프론트 배포 주소를 허용할 때 (쉼표 구분) |
+| `KOR_SERVICE_BASE_URL` | `https://apis.data.go.kr/B551011/KorService2` | HTTPS 가 막힌 환경에서 http 로 |
+| `LOCGO_HUB_BASE_URL` | `https://apis.data.go.kr/B551011/LocgoHubTarService1` | 〃 |
+| `TATS_CNCTR_RATE_BASE_URL` | `https://apis.data.go.kr/B551011/TatsCnctrRateService` | 〃 |
+| `TAR_RLTE_TAR_BASE_URL` | `https://apis.data.go.kr/B551011/TarRlteTarService1` | 〃 |
+| `DATA_LAB_BASE_URL` | `https://apis.data.go.kr/B551011/DataLabService` | 〃 |
+| `NAVER_API_HUB_BASE_URL` | `https://naverapihub.apigw.ntruss.com` | 〃 |
+| `ITS_BASE_URL` | `https://openapi.its.go.kr:9443` | 〃 |
+| `DATA_LAB_LAG_DAYS` | `30` | 공급자 공개 지연이 바뀌었을 때 |
+| `NAVER_QUERY_SUFFIX` | 없음 (붙이지 않음) | 검색어 뒤에 말을 붙일 때 |
+| `NAVER_AMBIGUOUS_RATIO` | `0.10` | 이름 변별력 기준을 바꿀 때 |
+| `ITS_HALF_SPAN` | `0.005` (약 555m) | 교통정보를 볼 범위를 바꿀 때 |
+
+그 밖의 세부 설정(페이지 크기, 최대 페이지 수, 타임아웃 등)도 `application.yaml` 에
+기본값이 있으며 같은 방식으로 환경변수로 덮을 수 있습니다.
 
 ### 3. 실행
 
@@ -116,11 +159,12 @@ java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=parking-catalog --file="sampl
 | 프로파일 | 대상 스키마 | `ddl-auto` | 비고 |
 | --- | --- | --- | --- |
 | `local` (기본) | `tour` | `update` | 로컬 개발 |
-| `test` | `tour_test` | `create-drop` | 테스트 실행 시에만 사용 |
+| `test` | `tour_test` 로 시작하는 스키마 | `create-drop` | 테스트 실행 시에만 사용 |
 | `prod` | AWS RDS | `update` | 환경변수로 접속 정보 주입 |
 
 배포 서버 DB 를 대상으로 테스트를 실행하지 않습니다.
-`TestProfileDatabaseTest` 가 테스트 접속 대상이 `tour_test` 인지 검증합니다.
+`TestProfileDatabaseTest` 가 테스트 접속 대상이 `tour_test` 로 시작하는 스키마인지 검증합니다.
+`tour` 나 운영 스키마를 가리키면 테스트가 멈춥니다.
 
 ## 규칙
 

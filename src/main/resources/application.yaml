@@ -8,8 +8,11 @@ spring:
     default: local
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
+    # 빈 값은 지정하지 않은 것으로 취급된다(BlankValueEnvironmentPostProcessor).
+    # 계정 이름은 비어 있으면 뜻이 없으므로 기본값을 두지 않고 기동을 멈춘다.
     username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
+    # 비밀번호 없는 계정은 실제로 쓰이므로 빈 값을 기본값으로 되살린다.
+    password: ${DB_PASSWORD:}
   sql:
     init:
       # MySQL 은 내장 DB 가 아니므로 always 로 지정해야 data.sql 이 실행된다.
