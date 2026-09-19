@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import org.hibernate.Hibernate;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -92,6 +93,36 @@ class AttractionRepositoryTest {
         List<Attraction> found = attractionRepository.findAllByContentIdIn(List.of("10", "11", "없는id"));
 
         assertThat(found).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("한 시·군의 카탈로그를 지역까지 함께 읽는다")
+    void findAllWithRegionByLawdCode() {
+        RegionCode gangneung = regionCodeRepository.findByLawdCode("51150").orElseThrow();
+        RegionCode sokcho = regionCodeRepository.findByLawdCode("51210").orElseThrow();
+
+        attractionRepository.save(attraction("20", "경포해변", gangneung, null, null));
+        attractionRepository.save(attraction("21", "속초해변", sokcho, null, null));
+
+        List<Attraction> found = attractionRepository.findAllWithRegionByLawdCode("51150");
+
+        assertThat(found).extracting(Attraction::getName).containsExactly("경포해변");
+        // 지역명을 트랜잭션 밖에서 붙이므로 지연 로딩으로 남아 있으면 안 된다.
+        assertThat(Hibernate.isInitialized(found.get(0).getRegionCode())).isTrue();
+    }
+
+    @Test
+    @DisplayName("카탈로그를 마지막으로 적재한 시각을 돌려주고, 비어 있으면 null 이다")
+    void findLatestImportedAt() {
+        attractionRepository.deleteAll();
+        attractionRepository.flush();
+
+        assertThat(attractionRepository.findLatestImportedAt()).isNull();
+
+        RegionCode gangneung = regionCodeRepository.findByLawdCode("51150").orElseThrow();
+        attractionRepository.saveAndFlush(attraction("30", "오죽헌", gangneung, null, null));
+
+        assertThat(attractionRepository.findLatestImportedAt()).isNotNull();
     }
 
     private Attraction attraction(String contentId, String name, RegionCode regionCode,
