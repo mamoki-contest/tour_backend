@@ -45,6 +45,9 @@ import com.mamoki.tour.infra.tarrltetar.dto.TarRlteTarResponse;
  * <p>공급자 장애는 캐시 계층이 흡수하므로 여기서 예외가 새어 나가지 않는다. 데이터를 얻지
  * 못하면 빈 목록이 아니라 그 사실을 담은 상태를 돌려준다.
  *
+ * <p>대체지 큐레이션은 자격 판정이 끝난 뒤 {@code AlternativeCurationService} 가 따로
+ * 적용한다(#54). 순서를 바꾸면 큐레이션이 자격을 만들어 줄 수 있게 되므로 뒤로 고정한다.
+ *
  * <p>알려진 비용: 연관 관광지가 여러 시·군에 걸치면 예측 조회가 시·군 수만큼 일어난다.
  * 24시간 캐시가 있어 두 번째 호출부터는 추가 호출이 없고, 후보 수에 상한을 두어 한 요청에서
  * 늘어날 수 있는 호출 수를 막는다.
@@ -69,13 +72,16 @@ public class RelatedPlaceService {
     private final TarRlteTarClient tarRlteTarClient;
     private final ExternalApiCacheService cacheService;
     private final VisitTimingService visitTimingService;
+    private final AlternativeCurationService curationService;
 
     public RelatedPlaceService(TarRlteTarClient tarRlteTarClient,
                                ExternalApiCacheService cacheService,
-                               VisitTimingService visitTimingService) {
+                               VisitTimingService visitTimingService,
+                               AlternativeCurationService curationService) {
         this.tarRlteTarClient = tarRlteTarClient;
         this.cacheService = cacheService;
         this.visitTimingService = visitTimingService;
+        this.curationService = curationService;
     }
 
     public RelatedPlaces resolve(AttractionSnapshot attraction) {
@@ -115,7 +121,7 @@ public class RelatedPlaceService {
         }
 
         return new RelatedPlaces(
-                alternatives(mine, baseNormalized, region, baseYm, today),
+                alternatives(mine, attraction.contentId(), baseNormalized, region, baseYm, today),
                 companions(mine, region, baseYm));
     }
 
@@ -124,9 +130,13 @@ public class RelatedPlaceService {
      *
      * <p>자격 미달인 후보는 담지 않는다. 다만 후보 자체가 있었는지는 {@code status} 로 알려
      * "연관 데이터가 없었다" 와 "자격을 충족한 곳이 없었다" 를 구분한다.
+     *
+     * <p>큐레이션은 자격을 모두 따진 <b>뒤</b>에 마지막으로 적용한다. 자격 미달 후보는
+     * 이 지점까지 오지 않으므로 큐레이션이 되살릴 수 없다.
      */
-    private RelatedPlacesView alternatives(List<RelatedPlaceRow> mine, String baseNormalized,
-                                           RegionRelated region, String baseYm, LocalDate today) {
+    private RelatedPlacesView alternatives(List<RelatedPlaceRow> mine, String baseContentId,
+                                           String baseNormalized, RegionRelated region,
+                                           String baseYm, LocalDate today) {
 
         List<RelatedPlaceRow> candidates = mine.stream()
                 .filter(row -> row.kind() == RelatedPlaceKind.ATTRACTION)
@@ -155,7 +165,9 @@ public class RelatedPlaceService {
             }
         }
 
-        return RelatedPlacesView.of(List.copyOf(eligible), true,
+        List<RelatedPlace> curated = curationService.curate(baseContentId, List.copyOf(eligible));
+
+        return RelatedPlacesView.of(curated, true,
                 region.dataStatus(), baseYm, region.collectedAt());
     }
 
