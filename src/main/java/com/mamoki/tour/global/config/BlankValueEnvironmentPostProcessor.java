@@ -42,6 +42,11 @@ import org.springframework.core.env.SystemEnvironmentPropertySource;
  * ({@code KOR_SERVICE_KEY}, {@code NAVER_QUERY_SUFFIX} 등) 은 지워도 기본값이 다시
  * 빈 문자열이라 동작이 같다.
  *
+ * <p>빈 값을 지운 뒤, 기본값 없이 쓰이는 필수 환경변수가 남아 있는지 확인한다
+ * ({@link RequiredEnvironmentVariables}). 지우는 일과 확인하는 일은 다르지만 순서가
+ * 붙어 있다 — 무엇이 "비어 있는가" 는 이 클래스가 정하므로, 확인은 그 판단이 끝난
+ * 직후에만 뜻이 있다. 환경 후처리기를 하나 더 두면 둘 사이의 순서가 등록 순서에 달린다.
+ *
  * <p>설정 파일을 다 읽은 뒤에 돌아야 하므로 가장 마지막 순서로 둔다.
  */
 public class BlankValueEnvironmentPostProcessor implements EnvironmentPostProcessor, Ordered {
@@ -63,6 +68,8 @@ public class BlankValueEnvironmentPostProcessor implements EnvironmentPostProces
                 propertySources.replace(propertySource.getName(), replacement);
             }
         }
+
+        RequiredEnvironmentVariables.verify(environment);
     }
 
     /** 지울 것이 없으면 {@code null} 을 돌려준다. */
