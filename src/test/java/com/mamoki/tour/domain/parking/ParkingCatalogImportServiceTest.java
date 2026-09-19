@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -124,6 +125,25 @@ class ParkingCatalogImportServiceTest {
         assertThat(lot.getDataBaseDate()).isNotNull();
         assertThat(lot.getProviderName()).isEqualTo("강원특별자치도 강릉시");
         assertThat(lot.displayAddress()).contains("강릉시");
+    }
+
+    @Test
+    @DisplayName("적재한 주차장을 좌표 사각형으로 찾을 수 있다")
+    void findsLotsWithinBox() {
+        ParkingCatalogImportResult result = importService.importFrom(sampleFile(), DOWNLOADED_ON);
+
+        // 강릉중앙시장 주변 약 ±1km.
+        List<ParkingLot> nearby = lotRepository.findWithinBox(result.snapshot(),
+                new BigDecimal("37.7438"), new BigDecimal("37.7618"),
+                new BigDecimal("128.8853"), new BigDecimal("128.9081"));
+
+        assertThat(nearby).isNotEmpty();
+        assertThat(nearby).extracting(ParkingLot::getProviderName)
+                .containsOnly("강원특별자치도 강릉시");
+        assertThat(nearby).extracting(ParkingLot::getName)
+                .anySatisfy(name -> assertThat(name).contains("중앙시장"));
+        // 좌표가 없는 행은 사각형에 들어올 수 없다.
+        assertThat(nearby).allSatisfy(lot -> assertThat(lot.getLatitude()).isNotNull());
     }
 
     @Test

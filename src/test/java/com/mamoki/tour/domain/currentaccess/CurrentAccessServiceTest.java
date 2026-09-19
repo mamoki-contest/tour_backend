@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -20,8 +21,11 @@ import org.mockito.Mockito;
 import com.mamoki.tour.domain.cache.dto.CachedResponse;
 import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
 import com.mamoki.tour.domain.currentaccess.dto.CurrentAccessView;
+import com.mamoki.tour.domain.currentaccess.dto.ParkingView;
 import com.mamoki.tour.domain.currentaccess.dto.RoadFlowView;
+import com.mamoki.tour.domain.currentaccess.enums.ParkingStatus;
 import com.mamoki.tour.domain.currentaccess.service.CurrentAccessService;
+import com.mamoki.tour.domain.currentaccess.service.ParkingAccessService;
 import com.mamoki.tour.global.enums.DataStatus;
 import com.mamoki.tour.global.exception.ExternalApiException;
 import com.mamoki.tour.infra.its.ItsClient;
@@ -39,6 +43,7 @@ class CurrentAccessServiceTest {
 
     private String fixture;
     private ExternalApiCacheService cacheService;
+    private ParkingAccessService parkingAccessService;
     private CurrentAccessService service;
 
     @BeforeEach
@@ -56,7 +61,10 @@ class CurrentAccessServiceTest {
         given(cacheService.fetch(any(), anyString(), any(), any()))
                 .willReturn(CachedResponse.available(fixture, LocalDateTime.now()));
 
-        service = new CurrentAccessService(client, cacheService);
+        parkingAccessService = Mockito.mock(ParkingAccessService.class);
+        given(parkingAccessService.resolve(any(), any())).willReturn(ParkingView.noData());
+
+        service = new CurrentAccessService(client, cacheService, parkingAccessService);
     }
 
     private ItsProperties properties() {
@@ -105,10 +113,27 @@ class CurrentAccessServiceTest {
     }
 
     @Test
-    @DisplayName("주차는 승인 대기라 아직 정보 없음이다")
-    void parkingIsNotAvailableYet() {
-        assertThat(service.resolve(LATITUDE, LONGITUDE).parking().status())
-                .isEqualTo(DataStatus.NO_DATA);
+    @DisplayName("주차는 별도 공급자에서 온다. 도로가 비어도 주차를 감추지 않는다")
+    void delegatesParkingToItsOwnProvider() {
+        given(cacheService.fetch(any(), anyString(), any(), any()))
+                .willReturn(CachedResponse.noData());
+        given(parkingAccessService.resolve(any(), any())).willReturn(new ParkingView(
+                ParkingStatus.AVAILABLE, DataStatus.AVAILABLE, List.of(),
+                LocalDateTime.now(), "강릉시 교통정보 조회서비스"));
+
+        CurrentAccessView view = service.resolve(LATITUDE, LONGITUDE);
+
+        assertThat(view.road().status()).isEqualTo(DataStatus.NO_DATA);
+        assertThat(view.parking().status()).isEqualTo(ParkingStatus.AVAILABLE);
+        Mockito.verify(parkingAccessService).resolve(LATITUDE, LONGITUDE);
+    }
+
+    @Test
+    @DisplayName("좌표가 없어도 주차 쪽 판단은 주차 서비스에 맡긴다")
+    void delegatesMissingCoordinatesToParkingService() {
+        service.resolve(null, LONGITUDE);
+
+        Mockito.verify(parkingAccessService).resolve(null, LONGITUDE);
     }
 
     @Test
