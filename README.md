@@ -74,7 +74,7 @@ cp .env.example .env
 
 | 변수 | 설명 |
 | --- | --- |
-| `KOR_SERVICE_KEY` | 공공데이터포털 Encoding 키. 5개 서비스가 공유합니다 |
+| `KOR_SERVICE_KEY` | 공공데이터포털 Encoding 키. 6개 서비스가 공유합니다 (서비스마다 활용신청은 따로) |
 | `NAVER_API_HUB_KEY_ID`, `NAVER_API_HUB_KEY` | NAVER API HUB 검색 API |
 | `KAKAO_REST_API_KEY` | 카카오 Local REST API |
 | `ITS_API_KEY` | 국가교통정보센터. 공공데이터포털과 무관한 별도 포털입니다 |
@@ -688,6 +688,11 @@ VALUES ('TMAP', '강원랜드카지노', '강원랜드카지노', '51770', '<카
 | `DataLabService` | 지역별 방문자수 | B551011 |
 | `GNitsTrafficInfoService_1.0` | 강릉시 실시간 주차(`getParkInfo`·`getParkRltm`) | 4201000 |
 | 카카오 로컬 REST API | 공급자 간 장소 매핑(지도 표시 아님) | 없음 (공공데이터포털이 아님) |
+
+**`GNitsTrafficInfoService_1.0` 은 활용신청을 따로 해야 합니다.** 키 하나를 여섯 서비스가
+공유하지만 권한은 서비스마다 붙습니다. 이 서비스는 표에서 맨 아래 한 줄이라 빠뜨리기 쉽고,
+빠뜨려도 오류가 아니라 상세 응답의 실시간 주차가 조용히 정보 없음이 됩니다. data.go.kr
+15140011 에서 신청하며 자동승인이라 즉시 열립니다.
 
 **공공데이터포털 서비스 중에서는 강릉시 교통정보 조회서비스만 기관코드가 다릅니다.** 키는 같지만 경로가 달라
 `GN_ITS_BASE_URL` 을 따로 둡니다. 강원 18개 시·군을 전수 조사한 결과 실시간 주차
