@@ -18,6 +18,9 @@ import com.mamoki.tour.domain.attraction.importer.AttractionCatalogImportResult;
 import com.mamoki.tour.domain.attraction.importer.AttractionCatalogImportService;
 import com.mamoki.tour.domain.mention.service.OnlineMentionCollectResult;
 import com.mamoki.tour.domain.mention.service.OnlineMentionCollector;
+import com.mamoki.tour.domain.placemapping.enums.MappingSource;
+import com.mamoki.tour.domain.placemapping.importer.PlaceMappingJobService;
+import com.mamoki.tour.domain.placemapping.importer.PlaceMappingResult;
 import com.mamoki.tour.domain.tmaprank.importer.TmapRankImportResult;
 import com.mamoki.tour.domain.tmaprank.importer.TmapRankImportService;
 import com.mamoki.tour.domain.visitorstats.importer.VisitorStatsImportResult;
@@ -31,6 +34,7 @@ import com.mamoki.tour.domain.visitorstats.importer.VisitorStatsImportService;
  * java -jar app.jar --job=mention --month=202609
  * java -jar app.jar --job=tmap --dir=sample --downloaded-on=2026-09-06
  * java -jar app.jar --job=visitor-stats --file=sample/입장객.xls --downloaded-on=2026-09-18
+ * java -jar app.jar --job=place-mapping --source=tmap
  * </pre>
  *
  * <p><b>{@code --job} 이 없으면 아무것도 하지 않는다.</b> 평소 서버 기동에 영향을 주지 않아야
@@ -48,6 +52,7 @@ public class BatchJobRunner implements ApplicationRunner {
     private static final String DIR_OPTION = "dir";
     private static final String FILE_OPTION = "file";
     private static final String DOWNLOADED_ON_OPTION = "downloaded-on";
+    private static final String SOURCE_OPTION = "source";
 
     private static final DateTimeFormatter MONTH = DateTimeFormatter.ofPattern("yyyyMM");
 
@@ -57,15 +62,18 @@ public class BatchJobRunner implements ApplicationRunner {
     private final OnlineMentionCollector mentionCollector;
     private final TmapRankImportService tmapRankImportService;
     private final VisitorStatsImportService visitorStatsImportService;
+    private final PlaceMappingJobService placeMappingJobService;
 
     public BatchJobRunner(AttractionCatalogImportService catalogImportService,
                           OnlineMentionCollector mentionCollector,
                           TmapRankImportService tmapRankImportService,
-                          VisitorStatsImportService visitorStatsImportService) {
+                          VisitorStatsImportService visitorStatsImportService,
+                          PlaceMappingJobService placeMappingJobService) {
         this.catalogImportService = catalogImportService;
         this.mentionCollector = mentionCollector;
         this.tmapRankImportService = tmapRankImportService;
         this.visitorStatsImportService = visitorStatsImportService;
+        this.placeMappingJobService = placeMappingJobService;
     }
 
     @Override
@@ -99,6 +107,34 @@ public class BatchJobRunner implements ApplicationRunner {
             case MENTION -> runMention(args);
             case TMAP -> runTmap(args);
             case VISITOR_STATS -> runVisitorStats(args);
+            case PLACE_MAPPING -> runPlaceMapping(args);
+        }
+    }
+
+    /**
+     * 원천을 주지 않으면 셋을 모두 돈다.
+     *
+     * <p>한 원천에서 인증 실패나 한도 초과로 멈추면 거기서 끝낸다. 다음 원천으로 넘어가도
+     * 같은 답을 받으면서 한도만 깎고, 무엇이 왜 멈췄는지가 뒤 원천의 로그에 묻힌다.
+     */
+    private void runPlaceMapping(ApplicationArguments args) {
+        List<MappingSource> sources = option(args, SOURCE_OPTION)
+                .map(value -> List.of(MappingSource.from(value)
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                "알 수 없는 원천입니다: %s. 사용할 수 있는 값: %s"
+                                        .formatted(value, MappingSource.optionValues())))))
+                .orElseGet(() -> List.of(MappingSource.values()));
+
+        for (MappingSource source : sources) {
+            PlaceMappingResult result = placeMappingJobService.run(source);
+
+            log.info("장소 매핑 결과: source={}, {}", source.optionValue(), result.summary());
+
+            if (result.stoppedEarly()) {
+                log.warn("장소 매핑을 끝까지 돌지 못했습니다: {}. 남은 원천은 다음 실행이 봅니다.",
+                        result.stoppedReason());
+                return;
+            }
         }
     }
 
