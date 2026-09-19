@@ -8,6 +8,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +31,8 @@ import com.mamoki.tour.domain.region.repository.RegionCodeRepository;
  */
 @Service
 public class CatalogPlaceMatcher implements PlaceMatcher {
+
+    private static final Logger log = LoggerFactory.getLogger(CatalogPlaceMatcher.class);
 
     private final AttractionRepository attractionRepository;
     private final PlaceMappingRepository placeMappingRepository;
@@ -112,6 +116,18 @@ public class CatalogPlaceMatcher implements PlaceMatcher {
         }
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p><b>한 관광지에 확정 행이 둘 이상이면 별칭을 하나도 쓰지 않는다(#84).</b> 매핑 표의
+     * 유니크 키는 {@code (원천, 이름, 시·군)} 이라 서로 다른 원천 이름 둘이 같은 관광지로
+     * 확정되는 것을 막지 않는다. 그 둘을 다 별칭으로 쓰면 연관 장소 목록이 두 기준 관광지의
+     * 합집합이 되어, 그 관광지와 상관없는 곳이 섞여 나온다. 에러는 나지 않는다.
+     *
+     * <p>이름 방향({@link #index})에서 같은 이름이 두 관광지를 가리키면 그 이름을 아예 빼는
+     * 것과 같은 규칙이다. 좁히지 못한 것은 값을 만들지 않는다. 카탈로그 이름 자체는 매핑과
+     * 무관하게 늘 남으므로, 매핑이 없던 때의 동작은 그대로다.
+     */
     @Override
     @Transactional(readOnly = true)
     public Set<String> normalizedAliases(MappingSource source, String contentId, String catalogName) {
@@ -127,9 +143,19 @@ public class CatalogPlaceMatcher implements PlaceMatcher {
             return aliases;
         }
 
-        placeMappingRepository.findConfirmedBySourceAndContentId(source, contentId).stream()
-                .map(PlaceMapping::getNormalizedName)
-                .forEach(aliases::add);
+        List<PlaceMapping> confirmed =
+                placeMappingRepository.findConfirmedBySourceAndContentId(source, contentId);
+
+        if (confirmed.size() > 1) {
+            log.warn("관광지 {}({}) 에 {} 원천의 확정 매핑이 {}건이라 별칭을 쓰지 않습니다: {}. "
+                            + "하나만 남기고 나머지는 지우거나 MANUAL 로 고쳐 넣으세요.",
+                    catalogName, contentId, source.optionValue(), confirmed.size(),
+                    confirmed.stream().map(PlaceMapping::getSourceName).toList());
+
+            return aliases;
+        }
+
+        confirmed.stream().map(PlaceMapping::getNormalizedName).forEach(aliases::add);
 
         return aliases;
     }

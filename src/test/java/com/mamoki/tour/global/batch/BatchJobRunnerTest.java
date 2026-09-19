@@ -23,6 +23,7 @@ import com.mamoki.tour.domain.parking.importer.ParkingCatalogImportService;
 import com.mamoki.tour.domain.placemapping.enums.MappingSource;
 import com.mamoki.tour.domain.placemapping.importer.PlaceMappingJobService;
 import com.mamoki.tour.domain.placemapping.importer.PlaceMappingResult;
+import com.mamoki.tour.domain.placemapping.importer.SourceMatchRate;
 import com.mamoki.tour.domain.tmaprank.importer.TmapRankImportService;
 import com.mamoki.tour.domain.visitorstats.importer.VisitorStatsImportService;
 
@@ -51,8 +52,7 @@ class BatchJobRunnerTest {
         parkingCatalogImportService = Mockito.mock(ParkingCatalogImportService.class);
         placeMappingJobService = Mockito.mock(PlaceMappingJobService.class);
         given(placeMappingJobService.run(any()))
-                .willAnswer(call -> new PlaceMappingResult(
-                        call.getArgument(0), 0, 0, 0, 0, 0, 0, null));
+                .willAnswer(call -> PlaceMappingResult.notRun(call.getArgument(0), null));
 
         given(catalogImportService.importAll())
                 .willReturn(new AttractionCatalogImportResult(10, 10, 0, 0));
@@ -221,7 +221,7 @@ class BatchJobRunnerTest {
         // 무엇이 왜 멈췄는지가 뒤 원천의 로그에 묻힌다.
         given(placeMappingJobService.run(MappingSource.TMAP))
                 .willReturn(new PlaceMappingResult(MappingSource.TMAP, 10, 0, 3, 1, 1, 1,
-                        "카카오 호출 한도 초과"));
+                        0, 0, 1, new SourceMatchRate(20, 11, 0), "카카오 호출 한도 초과"));
 
         run("--job=place-mapping");
 

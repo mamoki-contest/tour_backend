@@ -144,6 +144,10 @@ public class BatchJobRunner implements ApplicationRunner {
 
             log.info("장소 매핑 결과: source={}, {}", source.optionValue(), result.summary());
 
+            // 분모를 정리하기 전과 후를 항상 함께 찍는다. 정리한 뒤 수치만 남기면 실제로 더
+            // 이어서 오른 것인지 분모를 줄여서 오른 것인지 뒤에서 구별할 수 없다.
+            log.info("장소 매핑 매칭률: source={}, {}", source.optionValue(), result.matchRate().summary());
+
             if (result.stoppedEarly()) {
                 log.warn("장소 매핑을 끝까지 돌지 못했습니다: {}. 남은 원천은 다음 실행이 봅니다.",
                         result.stoppedReason());

@@ -1,7 +1,6 @@
 package com.mamoki.tour.domain.placemapping.importer;
 
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 import org.slf4j.Logger;
@@ -49,28 +48,30 @@ class VisitorStatsUnmatchedNameCollector implements UnmatchedNameCollector {
 
     @Override
     @Transactional(readOnly = true)
-    public List<UnmatchedPlaceName> collect() {
+    public CollectedNames collect() {
         VisitorStatsSnapshot active = snapshotService.findActive().orElse(null);
 
         if (active == null) {
             log.warn("활성 입장객통계 스냅샷이 없습니다. 먼저 --job=visitor-stats 로 적재하세요.");
-            return List.of();
+            return CollectedNames.empty();
         }
 
         Map<String, String> lawdCodes = lawdCodesByRegionName();
-        Map<String, UnmatchedPlaceName> byKey = new LinkedHashMap<>();
+        CollectedNames.Builder collected = new CollectedNames.Builder()
+                .rows((int) entryRepository.countBySnapshot(active));
+
+        for (String contentId : entryRepository.findMatchedContentIds(active)) {
+            collected.matched(contentId);
+        }
 
         for (VisitorStatsEntry entry : entryRepository.findUnmatchedBySnapshot(active)) {
             String regionName = entry.getRawRegionName();
-            UnmatchedPlaceName name = UnmatchedPlaceName.of(
-                    entry.getRawPlaceName(), lawdCodes.get(regionName), regionName);
 
-            if (name.isDecidable()) {
-                byKey.putIfAbsent(name.key(), name);
-            }
+            collected.unmatched(UnmatchedPlaceName.of(
+                    entry.getRawPlaceName(), lawdCodes.get(regionName), regionName));
         }
 
-        return List.copyOf(byKey.values());
+        return collected.build();
     }
 
     private Map<String, String> lawdCodesByRegionName() {

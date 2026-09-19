@@ -1,7 +1,5 @@
 package com.mamoki.tour.domain.placemapping.importer;
 
-import java.util.List;
-
 import com.mamoki.tour.domain.placemapping.enums.MappingSource;
 
 /**
@@ -15,6 +13,9 @@ public interface UnmatchedNameCollector {
 
     MappingSource source();
 
-    /** @return 판정 대상 이름들. 원천 데이터가 아직 없으면 빈 목록이다. */
-    List<UnmatchedPlaceName> collect();
+    /**
+     * @return 판정 대상 이름과, 그 원천의 매칭률을 재는 데 쓰는 행 수. 원천 데이터가 아직
+     *         없으면 {@link CollectedNames#empty()} 다.
+     */
+    CollectedNames collect();
 }

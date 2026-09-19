@@ -31,7 +31,20 @@ import com.mamoki.tour.infra.kakao.dto.KakaoPlace;
  * 같은데 거리 때문에 탈락한 것이 미매칭 25건 중 7건이었다. 계곡·산·해변처럼 영역이 넓은 곳은
  * 두 서비스의 대표 좌표가 km 단위로 어긋난다(고원통계곡 13,641m). 경계를 그만큼 넓히면 이번에는
  * 도심에서 다른 장소가 붙는다. 이름 일치를 앞에 두면 경계를 넓히지 않고도 그 7건을 잇는다.
- * 같은 시·군에 같은 이름이 둘 있으면 유일성 조건에서 걸러지므로, 이 길이 거리보다 느슨하지 않다.
+ *
+ * <h2>이름 경로의 두 갈래 (#78)</h2>
+ * 3번이 안전한 것은 <b>카카오가 원천 이름을 알아본 경우</b>다. 그때는 같은 이름의 카카오
+ * 장소가 그 시·군에 하나뿐이라는 검사가 앞에 서 있다.
+ *
+ * <p>카카오가 원천 이름과 같은 장소를 하나도 주지 않으면 우리는 관련도 1위를 고르는데,
+ * 그 장소는 원천 이름과 아무 관계가 없을 수 있다({@code ○○컨트리클럽} 으로 찾았는데
+ * {@code 통일전망대} 가 오는 식이다). 그 이름이 카탈로그에 유일하다는 것은 카카오가
+ * 엉뚱한 곳을 골랐다는 사실을 조금도 반증하지 않는다. 그래서 이 갈래에서는 이름만으로
+ * 확정하지 않고 <b>거리 상한</b>을 함께 본다. 상한은 경계의 몇 배로 두어, 좌표가 km 단위로
+ * 어긋나는 넓은 지형은 살리되 수십 km 떨어진 다른 장소는 걸러낸다.
+ *
+ * <p>"알아봤다" 는 괄호 표기까지 걷어내고 본다. {@code 고원통계곡(상)} 으로 찾아
+ * {@code 고원통계곡} 이 온 것은 카카오가 그 장소를 찾아 준 것이다.
  *
  * <p><b>확정을 늘리는 쪽으로 규칙을 더하지 않는다.</b> 경계 안에 후보가 둘이면 그중 하나가
  * 훨씬 가까워도 확정하지 않는다. 틀린 장소에 붙은 입장객 수나 검색순위는 에러를 내지 않아
@@ -48,18 +61,39 @@ public final class PlaceMappingDecider {
      */
     private static final String PROVINCE_PREFIX = "강원";
 
-    private final int boundaryMeters;
+    /**
+     * 확정한 판정이 가질 수 있는 가장 낮은 신뢰도.
+     *
+     * <p>경계에 정확히 닿은 거리는 여유가 0 이지만 판정은 확정이다. 그대로 0.000 을 적으면
+     * 표를 훑는 사람이 "확정인데 신뢰도 0" 을 보고 확정 규칙을 의심하게 된다. 확정한
+     * 것은 0 보다 크게 적어, 0.000 이 확정이 아닌 행만 가리키게 둔다.
+     */
+    private static final BigDecimal MIN_CONFIRMED_CONFIDENCE = new BigDecimal("0.001");
 
-    public PlaceMappingDecider(int boundaryMeters) {
+    private final int boundaryMeters;
+    private final int nameBoundaryMeters;
+
+    public PlaceMappingDecider(int boundaryMeters, int nameBoundaryMultiplier) {
         if (boundaryMeters <= 0) {
             throw new IllegalArgumentException("거리 경계는 양수여야 합니다: " + boundaryMeters);
         }
 
+        if (nameBoundaryMultiplier <= 0) {
+            throw new IllegalArgumentException(
+                    "이름 경로 상한 배수는 양수여야 합니다: " + nameBoundaryMultiplier);
+        }
+
         this.boundaryMeters = boundaryMeters;
+        this.nameBoundaryMeters = boundaryMeters * nameBoundaryMultiplier;
     }
 
     public int boundaryMeters() {
         return boundaryMeters;
+    }
+
+    /** 카카오가 원천 이름을 알아보지 못했을 때, 이름만으로 이을 수 있는 최대 거리(m). */
+    public int nameBoundaryMeters() {
+        return nameBoundaryMeters;
     }
 
     /**
@@ -77,9 +111,7 @@ public final class PlaceMappingDecider {
                 .toList();
 
         if (inRegion.isEmpty()) {
-            return PlaceMappingDecision.unmatched(kakaoPlaces.isEmpty()
-                    ? "카카오 검색 결과가 없습니다."
-                    : "카카오 검색 결과가 모두 %s 밖입니다.".formatted(regionName));
+            return PlaceMappingDecision.unmatched(outOfRegionReason(kakaoPlaces, regionName));
         }
 
         String normalizedSource = PlaceNameNormalizer.normalize(sourceName);
@@ -95,14 +127,23 @@ public final class PlaceMappingDecider {
         }
 
         KakaoPlace chosen = sameName.size() == 1 ? sameName.get(0) : inRegion.get(0);
+        boolean recognizedSourceName =
+                sameName.size() == 1 || sameNameApartFromNotation(chosen, sourceName, regionName);
 
-        PlaceMappingDecision byName = decideByName(chosen, catalog);
+        PlaceMappingDecision byName = decideByName(chosen, catalog, recognizedSourceName);
 
         return byName != null ? byName : decideByDistance(chosen, catalog);
     }
 
-    /** 카카오 대표 이름이 카탈로그에서 유일하게 일치하는 경우만 확정한다. 아니면 null 을 주고 거리로 넘긴다. */
-    private PlaceMappingDecision decideByName(KakaoPlace chosen, List<CatalogCandidate> catalog) {
+    /**
+     * 카카오 대표 이름이 카탈로그에서 유일하게 일치하는 경우만 확정한다. 아니면 null 을 주고
+     * 거리로 넘긴다.
+     *
+     * @param recognizedSourceName 카카오가 원천 이름과 같은 장소를 주었는지. 그렇지 않으면
+     *                             고른 장소가 원천 이름과 무관할 수 있어 거리 상한을 함께 본다.
+     */
+    private PlaceMappingDecision decideByName(KakaoPlace chosen, List<CatalogCandidate> catalog,
+                                              boolean recognizedSourceName) {
         String normalizedKakao = PlaceNameNormalizer.normalize(chosen.placeName());
 
         if (normalizedKakao == null) {
@@ -118,13 +159,30 @@ public final class PlaceMappingDecider {
         }
 
         CatalogCandidate matched = sameName.get(0);
+        Double distance = distance(chosen, matched);
+
+        if (!recognizedSourceName && !withinNameBoundary(distance)) {
+            // 카카오가 원천 이름을 알아보지 못했고, 고른 장소가 카탈로그 후보에서 멀거나
+            // 거리를 아예 견줄 수 없다. 이름이 유일하다는 것만으로는 근거가 되지 않는다.
+            return null;
+        }
+
         boolean rawEqual = matched.name() != null && matched.name().equals(chosen.placeName());
 
         return PlaceMappingDecision.confirmed(chosen, matched.contentId(),
                 rawEqual ? PlaceMatchMethod.EXACT : PlaceMatchMethod.NORMALIZED,
-                BigDecimal.ONE, distance(chosen, matched),
-                "카카오 대표 이름 %s 이(가) 이 시·군 카탈로그에서 유일하게 일치합니다."
-                        .formatted(chosen.placeName()));
+                BigDecimal.ONE, distance,
+                recognizedSourceName
+                        ? "카카오 대표 이름 %s 이(가) 이 시·군 카탈로그에서 유일하게 일치합니다."
+                                .formatted(chosen.placeName())
+                        : ("카카오가 원천 이름을 알아보지 못했지만 대표 이름 %s 이(가) 카탈로그에서 "
+                                + "유일하게 일치하고 %dm 로 상한(%dm) 안입니다.")
+                                .formatted(chosen.placeName(), Math.round(distance),
+                                        nameBoundaryMeters));
+    }
+
+    private boolean withinNameBoundary(Double distance) {
+        return distance != null && distance <= nameBoundaryMeters;
     }
 
     private PlaceMappingDecision decideByDistance(KakaoPlace chosen, List<CatalogCandidate> catalog) {
@@ -170,7 +228,8 @@ public final class PlaceMappingDecider {
         }
 
         return PlaceMappingDecision.confirmed(chosen, nearest.candidate().contentId(),
-                PlaceMatchMethod.KAKAO_COORD, confidenceOf(nearest.distance()), nearest.distance(),
+                PlaceMatchMethod.KAKAO_COORD, confirmedConfidenceOf(nearest.distance()),
+                nearest.distance(),
                 "경계(%dm) 안 후보가 %s 한 곳이고 %dm 떨어져 있습니다."
                         .formatted(boundaryMeters, nearest.candidate().name(),
                                 Math.round(nearest.distance())));
@@ -183,14 +242,65 @@ public final class PlaceMappingDecider {
         return BigDecimal.valueOf(Math.max(0, ratio)).setScale(3, RoundingMode.HALF_UP);
     }
 
+    /** 확정한 판정의 신뢰도. 0.000 이 확정이 아닌 행만 가리키도록 하한을 둔다. */
+    private BigDecimal confirmedConfidenceOf(double distanceMeters) {
+        return confidenceOf(distanceMeters).max(MIN_CONFIRMED_CONFIDENCE);
+    }
+
     private static Double distance(KakaoPlace place, CatalogCandidate candidate) {
         return Coordinates.distanceMeters(place.latitude(), place.longitude(),
                 candidate.latitude(), candidate.longitude());
     }
 
+    /**
+     * 카카오가 돌려준 대표 이름이 표기만 걷어내면 원천 이름과 같은가.
+     *
+     * <p>{@code 고원통계곡(상)} 으로 찾아 {@code 고원통계곡} 이 온 것은 카카오가 그 장소를
+     * 찾아 준 것이지 엉뚱한 곳을 고른 것이 아니다. 이 판단에만 매핑 단계 정규화를 쓴다.
+     * 앞의 동명 모호성 검사는 공용 정규화 그대로다 — 거기서 규칙을 넓히면 서로 다른 장소가
+     * 같은 이름으로 묶여 확정이 늘어난다.
+     */
+    private static boolean sameNameApartFromNotation(KakaoPlace chosen, String sourceName,
+                                                     String regionName) {
+        String source = MappingNameNormalizer.normalize(sourceName, regionName);
+        String kakao = MappingNameNormalizer.normalize(chosen.placeName(), regionName);
+
+        return source != null && source.equals(kakao);
+    }
+
     private static boolean sameNormalizedName(String placeName, String normalizedSource) {
         return normalizedSource != null
                 && normalizedSource.equals(PlaceNameNormalizer.normalize(placeName));
+    }
+
+    /**
+     * 시·군 안의 결과가 하나도 없을 때의 사유.
+     *
+     * <p>"시·군 밖" 과 "주소에 시·도가 없어 강원인지 가릴 수 없었다" 는 다른 사실이다.
+     * 둘을 같은 문장으로 적으면, 주소 표기가 바뀌어 전부 떨어져 나가는 날에도 로그가
+     * 평소와 똑같이 보인다.
+     */
+    private static String outOfRegionReason(List<KakaoPlace> kakaoPlaces, String regionName) {
+        if (kakaoPlaces.isEmpty()) {
+            return "카카오 검색 결과가 없습니다.";
+        }
+
+        long withProvince = kakaoPlaces.stream().filter(PlaceMappingDecider::hasProvince).count();
+
+        if (withProvince == 0) {
+            return "카카오 검색 결과 %d 곳의 주소가 모두 %s 로 시작하지 않아 시·도를 가릴 수 없습니다."
+                    .formatted(kakaoPlaces.size(), PROVINCE_PREFIX);
+        }
+
+        return "카카오 검색 결과가 모두 %s 밖입니다.".formatted(regionName);
+    }
+
+    private static boolean hasProvince(KakaoPlace place) {
+        return startsWithProvince(place.addressName()) || startsWithProvince(place.roadAddressName());
+    }
+
+    private static boolean startsWithProvince(String address) {
+        return address != null && address.startsWith(PROVINCE_PREFIX);
     }
 
     private static boolean isInRegion(KakaoPlace place, String regionName) {

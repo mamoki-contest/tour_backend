@@ -1,8 +1,8 @@
 package com.mamoki.tour.domain.placemapping.importer;
 
-import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,34 +54,45 @@ class RelatedPlaceUnmatchedNameCollector implements UnmatchedNameCollector {
      * 이름을 읽는 질의들은 각자 자기 트랜잭션에서 돈다.
      */
     @Override
-    public List<UnmatchedPlaceName> collect() {
+    public CollectedNames collect() {
         PlaceMatchIndex matchIndex = placeMatcher.index(MappingSource.RELATED_PLACE);
-        Map<String, UnmatchedPlaceName> byKey = new LinkedHashMap<>();
+        CollectedNames.Builder collected = new CollectedNames.Builder();
+        Set<String> seenBaseNames = new LinkedHashSet<>();
+        int rows = 0;
 
         for (RegionCode region : regionCodeRepository.findAll()) {
-            List<RelatedPlaceRow> rows = regionLoader.load(region.getLawdCode()).rows();
+            List<RelatedPlaceRow> regionRows = regionLoader.load(region.getLawdCode()).rows();
 
-            if (rows.isEmpty()) {
+            if (regionRows.isEmpty()) {
                 log.warn("연관 장소 응답이 비어 있습니다. lawdCode={}", region.getLawdCode());
                 continue;
             }
 
-            for (RelatedPlaceRow row : rows) {
+            for (RelatedPlaceRow row : regionRows) {
                 // 기준 관광지명만 본다. 연관 장소명은 그 자체로 조회 대상이 아니라
                 // 기준 관광지의 상세에 딸려 나가는 값이다.
-                if (matchIndex.match(region.getName(), row.baseName()).isPresent()) {
+                //
+                // 한 기준 관광지가 연관 장소 수십 개와 함께 수십 행으로 온다. 그 행 수를
+                // 분모로 쓰면 연관 장소를 많이 가진 곳이 분모를 지배한다. 여기서 한 "행" 은
+                // (시·군, 기준 관광지명) 하나다.
+                if (!seenBaseNames.add(region.getLawdCode() + "|" + row.baseName())) {
                     continue;
                 }
 
-                UnmatchedPlaceName name = UnmatchedPlaceName.of(
-                        row.baseName(), region.getLawdCode(), region.getName());
+                rows++;
 
-                if (name.isDecidable()) {
-                    byKey.putIfAbsent(name.key(), name);
+                String matched = matchIndex.match(region.getName(), row.baseName()).orElse(null);
+
+                if (matched != null) {
+                    collected.matched(matched);
+                    continue;
                 }
+
+                collected.unmatched(UnmatchedPlaceName.of(
+                        row.baseName(), region.getLawdCode(), region.getName()));
             }
         }
 
-        return List.copyOf(byKey.values());
+        return collected.rows(rows).build();
     }
 }

@@ -29,7 +29,7 @@ class PlaceMappingDeciderTest {
     private static final BigDecimal BASE_LATITUDE = new BigDecimal("37.8034");
     private static final BigDecimal BASE_LONGITUDE = new BigDecimal("128.9102");
 
-    private final PlaceMappingDecider decider = new PlaceMappingDecider(300);
+    private final PlaceMappingDecider decider = new PlaceMappingDecider(300, 5);
 
     private static KakaoPlace kakaoPlace(String id, String name, String latitude, String longitude) {
         return new KakaoPlace(id, name, "AT4", "여행 > 관광,명소",
@@ -198,5 +198,101 @@ class PlaceMappingDeciderTest {
 
         assertThat(decision.status()).isEqualTo(PlaceMappingStatus.CONFIRMED);
         assertThat(decision.kakaoPlaceId()).isEqualTo("8199114");
+    }
+
+    @Test
+    @DisplayName("카카오가 원천 이름을 알아보지 못했으면 이름 유일성만으로 확정하지 않는다 (#78)")
+    void doesNotConfirmByNameWhenKakaoDidNotRecognizeTheSourceName() {
+        // 카카오는 `○○컨트리클럽` 을 모르고 관련도 1위로 통일전망대를 준다. 그 이름이 시·군
+        // 카탈로그에 유일하다는 사실은 카카오가 엉뚱한 곳을 골랐다는 것을 반증하지 못한다.
+        PlaceMappingDecision decision = decider.decide("○○컨트리클럽", REGION,
+                List.of(nearbyPlace("통일전망대")),
+                List.of(candidate("777", "통일전망대", 15_000)));
+
+        assertThat(decision.status()).isNotEqualTo(PlaceMappingStatus.CONFIRMED);
+        assertThat(decision.method()).isNull();
+    }
+
+    @Test
+    @DisplayName("알아보지 못했어도 상한(경계의 5배) 안이면 확정한다 — 국립대관령자연휴양림 469m")
+    void confirmsByNameWithinTheNameBoundary() {
+        PlaceMappingDecision decision = decider.decide("대관령자연휴양림", REGION,
+                List.of(nearbyPlace("국립대관령자연휴양림")),
+                List.of(candidate("126100", "국립대관령자연휴양림", 469)));
+
+        assertThat(decision.status()).isEqualTo(PlaceMappingStatus.CONFIRMED);
+        assertThat(decision.contentId()).isEqualTo("126100");
+        assertThat(decision.method()).isEqualTo(PlaceMatchMethod.EXACT);
+    }
+
+    @Test
+    @DisplayName("원천 이름을 알아본 경우에는 상한이 없다 — 고원통계곡 13,641m")
+    void confirmsByNameWithoutCeilingWhenKakaoRecognizedTheSourceName() {
+        PlaceMappingDecision decision = decider.decide("고원통계곡", REGION,
+                List.of(nearbyPlace("고원통계곡")),
+                List.of(candidate("126200", "고원통계곡", 13_641)));
+
+        assertThat(decision.status()).isEqualTo(PlaceMappingStatus.CONFIRMED);
+        assertThat(decision.contentId()).isEqualTo("126200");
+    }
+
+    @Test
+    @DisplayName("알아보지 못한 데다 거리를 견줄 좌표도 없으면 확정하지 않는다 (#78)")
+    void doesNotConfirmByNameWhenDistanceIsUnknown() {
+        PlaceMappingDecision decision = decider.decide("○○컨트리클럽", REGION,
+                List.of(nearbyPlace("통일전망대")),
+                List.of(new CatalogCandidate("777", "통일전망대", null, null)));
+
+        assertThat(decision.status()).isNotEqualTo(PlaceMappingStatus.CONFIRMED);
+    }
+
+    @Test
+    @DisplayName("경계에 정확히 닿아 확정한 판정의 신뢰도는 0 이 아니다 (#83)")
+    void confirmedConfidenceIsNeverZero() {
+        PlaceMappingDecision decision = decider.decide("강릉 경포해변", REGION,
+                List.of(nearbyPlace("경포해수욕장")),
+                List.of(candidate("125266", "경포호", 300)));
+
+        assertThat(decision.status()).isEqualTo(PlaceMappingStatus.CONFIRMED);
+        assertThat(decision.confidence()).isGreaterThan(BigDecimal.ZERO);
+    }
+
+    @Test
+    @DisplayName("주소에 시·도가 없으면 시·군 밖이라고 적지 않는다 (#83)")
+    void tellsApartMissingProvinceFromOutOfRegion() {
+        KakaoPlace withoutProvince = new KakaoPlace("1", "경포해수욕장", "AT4", "여행 > 관광,명소",
+                "강문동 산 1", null, BASE_LONGITUDE.toPlainString(), BASE_LATITUDE.toPlainString());
+
+        PlaceMappingDecision decision = decider.decide("경포해변", REGION,
+                List.of(withoutProvince), List.of(candidate("125266", "경포호", 100)));
+
+        assertThat(decision.status()).isEqualTo(PlaceMappingStatus.UNMATCHED);
+        assertThat(decision.reason()).contains("시·도를 가릴 수 없습니다");
+        assertThat(decision.reason()).doesNotContain("밖입니다");
+    }
+
+    @Test
+    @DisplayName("강원 다른 시·군의 결과만 있으면 시·군 밖이라고 적는다 (#83)")
+    void tellsOutOfRegionApart() {
+        KakaoPlace otherRegion = new KakaoPlace("1", "경포해수욕장", "AT4", "여행 > 관광,명소",
+                "강원특별자치도 속초시 조양동", null,
+                BASE_LONGITUDE.toPlainString(), BASE_LATITUDE.toPlainString());
+
+        PlaceMappingDecision decision = decider.decide("경포해변", REGION,
+                List.of(otherRegion), List.of(candidate("125266", "경포호", 100)));
+
+        assertThat(decision.status()).isEqualTo(PlaceMappingStatus.UNMATCHED);
+        assertThat(decision.reason()).contains("모두 %s 밖입니다".formatted(REGION));
+    }
+
+    @Test
+    @DisplayName("카카오 분류를 판정에 쓰지는 않되 판정 결과에 남긴다 (#72)")
+    void keepsKakaoCategoryOnTheDecision() {
+        PlaceMappingDecision decision = decider.decide("강릉 경포해변", REGION,
+                List.of(nearbyPlace("경포해수욕장")),
+                List.of(candidate("125266", "경포호", 100)));
+
+        assertThat(decision.kakaoCategoryGroupCode()).isEqualTo("AT4");
+        assertThat(decision.kakaoCategoryName()).isEqualTo("여행 > 관광,명소");
     }
 }
