@@ -19,6 +19,7 @@ import com.mamoki.tour.domain.attraction.importer.AttractionCatalogImportResult;
 import com.mamoki.tour.domain.attraction.importer.AttractionCatalogImportService;
 import com.mamoki.tour.domain.mention.service.OnlineMentionCollectResult;
 import com.mamoki.tour.domain.mention.service.OnlineMentionCollector;
+import com.mamoki.tour.domain.parking.importer.ParkingCatalogImportService;
 import com.mamoki.tour.domain.tmaprank.importer.TmapRankImportService;
 import com.mamoki.tour.domain.visitorstats.importer.VisitorStatsImportService;
 
@@ -34,6 +35,7 @@ class BatchJobRunnerTest {
     private OnlineMentionCollector mentionCollector;
     private TmapRankImportService tmapRankImportService;
     private VisitorStatsImportService visitorStatsImportService;
+    private ParkingCatalogImportService parkingCatalogImportService;
     private BatchJobRunner runner;
 
     @BeforeEach
@@ -42,6 +44,7 @@ class BatchJobRunnerTest {
         mentionCollector = Mockito.mock(OnlineMentionCollector.class);
         tmapRankImportService = Mockito.mock(TmapRankImportService.class);
         visitorStatsImportService = Mockito.mock(VisitorStatsImportService.class);
+        parkingCatalogImportService = Mockito.mock(ParkingCatalogImportService.class);
 
         given(catalogImportService.importAll())
                 .willReturn(new AttractionCatalogImportResult(10, 10, 0, 0));
@@ -49,7 +52,7 @@ class BatchJobRunnerTest {
                 .willReturn(Mockito.mock(OnlineMentionCollectResult.class, Mockito.RETURNS_DEEP_STUBS));
 
         runner = new BatchJobRunner(catalogImportService, mentionCollector,
-                tmapRankImportService, visitorStatsImportService);
+                tmapRankImportService, visitorStatsImportService, parkingCatalogImportService);
     }
 
     private void run(String... args) {
@@ -57,7 +60,8 @@ class BatchJobRunnerTest {
     }
 
     private void verifyNothingRan() {
-        Mockito.verifyNoInteractions(mentionCollector, tmapRankImportService, visitorStatsImportService);
+        Mockito.verifyNoInteractions(mentionCollector, tmapRankImportService,
+                visitorStatsImportService, parkingCatalogImportService);
         Mockito.verify(catalogImportService, Mockito.never()).importAll();
     }
 
@@ -136,12 +140,23 @@ class BatchJobRunnerTest {
     }
 
     @Test
+    @DisplayName("주차장 표준데이터 작업은 파일과 내려받은 날을 넘긴다")
+    void runsParkingCatalogJob() {
+        run("--job=parking-catalog", "--file=sample/parking.csv", "--downloaded-on=2026-09-19");
+
+        Mockito.verify(parkingCatalogImportService)
+                .importFrom(Path.of("sample/parking.csv"), LocalDate.of(2026, 9, 19));
+    }
+
+    @Test
     @DisplayName("필요한 인자가 빠지면 실행하지 않는다")
     void rejectsMissingRequiredOption() {
         run("--job=tmap");
         run("--job=visitor-stats");
+        run("--job=parking-catalog");
 
-        Mockito.verifyNoInteractions(tmapRankImportService, visitorStatsImportService);
+        Mockito.verifyNoInteractions(tmapRankImportService, visitorStatsImportService,
+                parkingCatalogImportService);
     }
 
     @Test
@@ -163,10 +178,10 @@ class BatchJobRunnerTest {
     }
 
     @Test
-    @DisplayName("작업 목록에 네 가지가 모두 들어 있다")
+    @DisplayName("작업 목록에 다섯 가지가 모두 들어 있다")
     void listsEveryJob() {
-        assertThat(BatchJob.values()).hasSize(4);
+        assertThat(BatchJob.values()).hasSize(5);
         assertThat(BatchJob.names())
-                .contains("catalog", "mention", "tmap", "visitor-stats");
+                .contains("catalog", "mention", "tmap", "visitor-stats", "parking-catalog");
     }
 }

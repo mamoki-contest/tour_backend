@@ -30,8 +30,11 @@ import com.mamoki.tour.domain.attraction.dto.OnlineMentionView;
 import com.mamoki.tour.domain.attraction.dto.TmapRankView;
 import com.mamoki.tour.domain.attraction.dto.VisitorStatsView;
 import com.mamoki.tour.domain.currentaccess.dto.CurrentAccessView;
+import com.mamoki.tour.domain.currentaccess.dto.ParkingLotView;
 import com.mamoki.tour.domain.currentaccess.dto.ParkingView;
 import com.mamoki.tour.domain.currentaccess.dto.RoadFlowView;
+import com.mamoki.tour.domain.currentaccess.enums.ParkingCongestion;
+import com.mamoki.tour.domain.currentaccess.enums.ParkingStatus;
 import com.mamoki.tour.domain.relatedplace.dto.RelatedPlace;
 import com.mamoki.tour.domain.relatedplace.dto.RelatedPlacesView;
 import com.mamoki.tour.domain.relatedplace.enums.RelatedPlaceKind;
@@ -369,6 +372,74 @@ class AttractionControllerTest {
                 .andExpect(jsonPath("$.msg").value("관광지 정보를 찾을 수 없습니다."));
     }
 
+    @Test
+    @DisplayName("실시간 잔여면이 있는 주차장을 상세 응답에 그대로 담는다")
+    void serializesRealtimeParking() throws Exception {
+        given(attractionDetailService.getDetail(anyString())).willReturn(detailWithParking(
+                new ParkingView(ParkingStatus.AVAILABLE, DataStatus.AVAILABLE,
+                        List.of(new ParkingLotView("강릉역",
+                                new BigDecimal("37.7623954"), new BigDecimal("128.8976185"),
+                                420, 410, 98, 312, ParkingCongestion.PLENTY,
+                                LocalDateTime.of(2026, 9, 19, 21, 13), "강릉시 교통정보 조회서비스")),
+                        LocalDateTime.of(2026, 9, 19, 21, 13), "강릉시 교통정보 조회서비스")));
+
+        mvc.perform(get("/api/v1/attractions/126508"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.currentAccess.parking.status").value("AVAILABLE"))
+                .andExpect(jsonPath("$.data.currentAccess.parking.dataStatus").value("AVAILABLE"))
+                .andExpect(jsonPath("$.data.currentAccess.parking.lots[0].name").value("강릉역"))
+                .andExpect(jsonPath("$.data.currentAccess.parking.lots[0].distanceMeters").value(420))
+                .andExpect(jsonPath("$.data.currentAccess.parking.lots[0].totalLots").value(410))
+                .andExpect(jsonPath("$.data.currentAccess.parking.lots[0].occupiedLots").value(98))
+                .andExpect(jsonPath("$.data.currentAccess.parking.lots[0].availableLots").value(312))
+                .andExpect(jsonPath("$.data.currentAccess.parking.lots[0].congestion").value("PLENTY"))
+                .andExpect(jsonPath("$.data.currentAccess.parking.lots[0].source")
+                        .value("강릉시 교통정보 조회서비스"))
+                .andExpect(jsonPath("$.data.currentAccess.parking.observedAt").exists());
+    }
+
+    @Test
+    @DisplayName("실시간이 없는 주차장은 점유·잔여·혼잡을 0 이 아니라 null 로 내려준다")
+    void serializesStaticOnlyParking() throws Exception {
+        given(attractionDetailService.getDetail(anyString())).willReturn(detailWithParking(
+                new ParkingView(ParkingStatus.STATIC_ONLY, DataStatus.NO_DATA,
+                        List.of(new ParkingLotView("경포대광장 주차장(충혼탑)",
+                                new BigDecimal("37.7958"), new BigDecimal("128.8952"),
+                                102, 98, null, null, null, null, "전국주차장정보표준데이터")),
+                        null, "전국주차장정보표준데이터")));
+
+        mvc.perform(get("/api/v1/attractions/126508"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.currentAccess.parking.status").value("STATIC_ONLY"))
+                .andExpect(jsonPath("$.data.currentAccess.parking.lots[0].totalLots").value(98))
+                // 0 으로 내려가면 만차로 읽힌다.
+                .andExpect(jsonPath("$.data.currentAccess.parking.lots[0].occupiedLots").doesNotExist())
+                .andExpect(jsonPath("$.data.currentAccess.parking.lots[0].availableLots").doesNotExist())
+                .andExpect(jsonPath("$.data.currentAccess.parking.lots[0].congestion").doesNotExist())
+                .andExpect(jsonPath("$.data.currentAccess.parking.observedAt").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("주차장이 없는 것과 확인하지 못한 것을 다른 상태로 내려준다")
+    void distinguishesNoneFromNoData() throws Exception {
+        given(attractionDetailService.getDetail(anyString())).willReturn(detailWithParking(
+                ParkingView.none(DataStatus.AVAILABLE, "강릉시 교통정보 조회서비스")));
+
+        mvc.perform(get("/api/v1/attractions/126508"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.currentAccess.parking.status").value("NONE"))
+                .andExpect(jsonPath("$.data.currentAccess.parking.lots.length()").value(0));
+
+        given(attractionDetailService.getDetail(anyString()))
+                .willReturn(detailWithParking(ParkingView.noData()));
+
+        mvc.perform(get("/api/v1/attractions/126508"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.currentAccess.parking.status").value("NO_DATA"))
+                .andExpect(jsonPath("$.data.currentAccess.parking.dataStatus").value("NO_DATA"))
+                .andExpect(jsonPath("$.data.currentAccess.parking.lots.length()").value(0));
+    }
+
     private static AttractionDetailResponse detail() {
         RelatedPlacesView alternatives = RelatedPlacesView.of(
                 List.of(new RelatedPlace("정동진", RelatedPlaceKind.ATTRACTION, "관광지",
@@ -386,6 +457,15 @@ class AttractionControllerTest {
     private static AttractionDetailResponse detailWith(RelatedPlacesView alternatives,
                                                        RelatedPlacesView companions) {
 
+        return detailWith(alternatives, companions,
+                new CurrentAccessView(RoadFlowView.noData(), ParkingView.noData(),
+                        LocalDateTime.of(2026, 9, 8, 3, 0), "국가교통정보센터"));
+    }
+
+    private static AttractionDetailResponse detailWith(RelatedPlacesView alternatives,
+                                                       RelatedPlacesView companions,
+                                                       CurrentAccessView currentAccess) {
+
         return new AttractionDetailResponse(
                 "126508", "경포해변", null, "강원특별자치도 강릉시 창해로 514", "25460",
                 "033-640-4901", "https://www.gn.go.kr", "경포해변은 강릉을 대표하는 해수욕장이다.",
@@ -395,9 +475,16 @@ class AttractionControllerTest {
                 timing(),
                 List.of(new DailyVisitTiming(LocalDate.of(2026, 9, 8), VisitTimingStatus.LOW),
                         new DailyVisitTiming(LocalDate.of(2026, 9, 9), VisitTimingStatus.HIGH)),
-                new CurrentAccessView(RoadFlowView.noData(), ParkingView.noData(),
-                        LocalDateTime.of(2026, 9, 8, 3, 0), "국가교통정보센터"),
+                currentAccess,
                 alternatives, companions);
+    }
+
+    /** 주차 상태만 바꿔 가며 쓰는 상세 응답. */
+    private static AttractionDetailResponse detailWithParking(ParkingView parking) {
+        return detailWith(
+                RelatedPlacesView.noData("202607"), RelatedPlacesView.noData("202607"),
+                new CurrentAccessView(RoadFlowView.noData(), parking,
+                        LocalDateTime.of(2026, 9, 8, 3, 0), "국가교통정보센터"));
     }
 
     private static VisitTiming timing() {

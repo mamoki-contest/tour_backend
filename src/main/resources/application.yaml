@@ -121,6 +121,21 @@ tour:
       connect-timeout: 5s
       # 상세 응답 안에서 부르므로 오래 잡지 않는다.
       read-timeout: 10s
+    gn-its:
+      # 강릉시 교통정보 조회서비스(실시간 주차). 강원에서 유일하게 실시간 잔여면을 여는 지자체다.
+      # 인증키는 KorService2 계열과 같은 공공데이터포털 키지만 기관코드가 달라 base-url 은 따로 둔다.
+      base-url: ${GN_ITS_BASE_URL:https://apis.data.go.kr/4201000/GNitsTrafficInfoService_1.0}
+      service-key: ${KOR_SERVICE_KEY:}
+      # 주차장이 13곳뿐이라 1회 호출로 끝낸다. pageNo 가 범위를 넘으면 빈 목록이 아니라
+      # 전체를 다시 돌려주므로 페이지를 도는 순간 무한루프가 된다.
+      rows-per-page: ${GN_ITS_ROWS:100}
+      # 짧은 간격 연속 호출 시 HTTP 200 에 본문이 {} 만 오는 조용한 스로틀이 있다.
+      # 그때 다시 물어볼 횟수와 기다릴 시간. 실측상 8초 이상 간격이면 스로틀이 사라진다.
+      throttle-retries: ${GN_ITS_THROTTLE_RETRIES:2}
+      throttle-backoff: ${GN_ITS_THROTTLE_BACKOFF:800ms}
+      connect-timeout: 5s
+      # 상세 응답 안에서 부르므로 오래 잡지 않는다.
+      read-timeout: 10s
     naver:
       # 검색 API 는 NAVER API HUB 로 이관되었다. 개발자센터 도메인·헤더로는 인증되지 않는다.
       base-url: ${NAVER_API_HUB_BASE_URL:https://naverapihub.apigw.ntruss.com}
