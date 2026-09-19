@@ -59,7 +59,6 @@ cp .env.example .env
 
 | 변수 | 기본값 | 언제 지정하나 |
 | --- | --- | --- |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` | 프론트 배포 주소를 허용할 때 (쉼표 구분) |
 | `KOR_SERVICE_BASE_URL` | `https://apis.data.go.kr/B551011/KorService2` | HTTPS 가 막힌 환경에서 http 로 |
 | `LOCGO_HUB_BASE_URL` | `https://apis.data.go.kr/B551011/LocgoHubTarService1` | 〃 |
 | `TATS_CNCTR_RATE_BASE_URL` | `https://apis.data.go.kr/B551011/TatsCnctrRateService` | 〃 |
@@ -71,6 +70,17 @@ cp .env.example .env
 | `NAVER_QUERY_SUFFIX` | 없음 (붙이지 않음) | 검색어 뒤에 말을 붙일 때 |
 | `NAVER_AMBIGUOUS_RATIO` | `0.10` | 이름 변별력 기준을 바꿀 때 |
 | `ITS_HALF_SPAN` | `0.005` (약 555m) | 교통정보를 볼 범위를 바꿀 때 |
+
+비우면 그 기능이 꺼지는 값:
+
+| 변수 | 비웠을 때 | 언제 지정하나 |
+| --- | --- | --- |
+| `CORS_ALLOWED_ORIGINS` | CORS 매핑을 등록하지 않습니다 (브라우저에서 다른 출처로 부를 수 없음) | 프론트 주소를 허용할 때 (쉼표 구분) |
+
+이 값만은 `application.yaml` 에 기본값이 없습니다. 빈 값이 "지정하지 않은 것" 이라
+기본값을 두면 **환경변수만으로 CORS 를 끌 방법이 사라지기** 때문입니다. `DB_PASSWORD` 와
+같은 개별 예외입니다. 로컬 개발용 `http://localhost:5173` 은 `.env.example` 에만 적혀 있어
+`.env` 를 복사한 사람에게만 적용됩니다.
 
 그 밖의 세부 설정(페이지 크기, 최대 페이지 수, 타임아웃 등)도 `application.yaml` 에
 기본값이 있으며 같은 방식으로 환경변수로 덮을 수 있습니다.
