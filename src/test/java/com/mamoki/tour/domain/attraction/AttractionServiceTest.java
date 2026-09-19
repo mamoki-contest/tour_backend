@@ -63,7 +63,8 @@ import com.mamoki.tour.infra.korservice.dto.KorServiceResponse;
  */
 class AttractionServiceTest {
 
-    /** 법정동 조회로 바꾼 뒤(#46) 실측한 강원 카탈로그 규모. 예전 정렬 상한 3,000 을 넘는다. */
+    /** 법정동 조회로 바꾼 뒤(#46) 실측한 강원 카탈로그 규모. 예전 정렬 상한 3,000 을 넘는다.
+     *  공급자 쪽 수치는 조금씩 바뀌므로 여기서는 상한을 넘는다는 사실만 붙든다. */
     private static final int GANGWON_CATALOG_SIZE = 4_746;
 
     private static final String GANGNEUNG_LAWD = "51150";
@@ -140,7 +141,7 @@ class AttractionServiceTest {
     // --- 카탈로그 전수 정렬 ---------------------------------------------------
 
     @Test
-    @DisplayName("시·군을 지정하지 않은 언급량 정렬은 카탈로그 전수(4,746곳)를 대상으로 한다")
+    @DisplayName("시·군을 지정하지 않은 언급량 정렬은 카탈로그 전수를 대상으로 한다")
     void sortsWholeCatalogBeyondOldProviderCap() {
         givenCatalog(catalogOf(GANGWON_CATALOG_SIZE));
 
