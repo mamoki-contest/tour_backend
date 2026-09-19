@@ -29,7 +29,11 @@ class TestProfileDatabaseTest {
         try (Connection connection = dataSource.getConnection()) {
             String schema = connection.getCatalog();
 
-            assertThat(schema).isEqualTo("tour_test");
+            assertThat(TestSchemaNames.isTestSchema(schema))
+                    .withFailMessage(
+                            "테스트 스키마는 %s 로 시작해야 한다. 지금 접속한 곳: %s",
+                            TestSchemaNames.prefix(), schema)
+                    .isTrue();
         }
     }
 }
