@@ -17,6 +17,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.web.client.RestClient;
 
 import com.mamoki.tour.domain.cache.dto.CachedResponse;
 import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
@@ -55,7 +56,7 @@ class CurrentAccessServiceTest {
         ItsClient client = Mockito.mock(ItsClient.class);
         given(client.trafficInfoKey(any(), any())).willReturn("trafficInfo?minX=128.9028");
         given(client.parse(anyString()))
-                .willAnswer(invocation -> new ItsClient(properties()).parse(invocation.getArgument(0)));
+                .willAnswer(invocation -> new ItsClient(properties(), RestClient.builder()).parse(invocation.getArgument(0)));
 
         cacheService = Mockito.mock(ExternalApiCacheService.class);
         given(cacheService.fetch(any(), anyString(), any(), any()))
@@ -175,7 +176,7 @@ class CurrentAccessServiceTest {
     @Test
     @DisplayName("오류 응답은 예외로 바꾼다. 빈 도로 상태로 위장하지 않는다")
     void rejectsErrorResponse() {
-        ItsClient client = new ItsClient(properties());
+        ItsClient client = new ItsClient(properties(), RestClient.builder());
 
         assertThatThrownBy(() -> client.parse(
                 "{\"header\":{\"resultCode\":1,\"resultMsg\":\"ERROR\"}}"))

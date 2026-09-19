@@ -4,9 +4,8 @@ import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatusCode;
-import org.springframework.http.client.ClientHttpRequestFactory;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -36,13 +35,13 @@ public class NaverBlogSearchClient {
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
 
-    public NaverBlogSearchClient(NaverApiHubProperties properties) {
+    public NaverBlogSearchClient(
+            NaverApiHubProperties properties,
+            @Qualifier("naverBlogSearchRestClientBuilder") RestClient.Builder restClientBuilder) {
         this.properties = properties;
         this.objectMapper = new ObjectMapper()
                 .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
-        this.restClient = RestClient.builder()
-                .requestFactory(requestFactory(properties))
-                .build();
+        this.restClient = restClientBuilder.build();
     }
 
     /**
@@ -113,13 +112,5 @@ public class NaverBlogSearchClient {
         }
 
         return response;
-    }
-
-    private static ClientHttpRequestFactory requestFactory(NaverApiHubProperties properties) {
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(properties.connectTimeout());
-        factory.setReadTimeout(properties.readTimeout());
-
-        return factory;
     }
 }

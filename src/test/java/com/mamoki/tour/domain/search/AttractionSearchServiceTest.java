@@ -16,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.web.client.RestClient;
 
 import com.mamoki.tour.domain.attraction.dto.AttractionResponse;
 import com.mamoki.tour.domain.attraction.dto.AttractionSnapshot;
@@ -61,7 +62,7 @@ class AttractionSearchServiceTest {
         given(client.searchKeywordByLawdKey(anyString(), any(), any(), anyString(), anyInt(), anyInt()))
                 .willAnswer(invocation -> "searchKeyword2?keyword=" + invocation.getArgument(3));
         given(client.parse(anyString(), anyString()))
-                .willAnswer(invocation -> new KorServiceClient(properties())
+                .willAnswer(invocation -> new KorServiceClient(properties(), RestClient.builder())
                         .parse(invocation.getArgument(0), invocation.getArgument(1)));
 
         cacheService = Mockito.mock(ExternalApiCacheService.class);

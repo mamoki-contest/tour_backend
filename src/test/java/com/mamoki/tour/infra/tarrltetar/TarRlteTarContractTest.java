@@ -12,6 +12,7 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.client.RestClient;
 
 import com.mamoki.tour.domain.relatedplace.dto.RelatedPlaceRow;
 import com.mamoki.tour.domain.relatedplace.enums.RelatedPlaceKind;
@@ -34,7 +35,7 @@ class TarRlteTarContractTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        client = new TarRlteTarClient(properties());
+        client = new TarRlteTarClient(properties(), RestClient.builder());
 
         String body;
         try (InputStream in = getClass().getResourceAsStream(

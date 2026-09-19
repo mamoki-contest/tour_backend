@@ -7,8 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import org.springframework.http.client.ClientHttpRequestFactory;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -33,7 +32,9 @@ public class KorServiceClient {
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
 
-    public KorServiceClient(KorServiceProperties properties) {
+    public KorServiceClient(
+            KorServiceProperties properties,
+            @Qualifier("korServiceRestClientBuilder") RestClient.Builder restClientBuilder) {
         this.properties = properties;
         // 공급자 응답 전용 매퍼. 알 수 없는 필드가 늘어나도 깨지지 않도록 별도로 둔다.
         //
@@ -42,9 +43,7 @@ public class KorServiceClient {
         this.objectMapper = new ObjectMapper()
                 .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
                 .enable(DeserializationFeature.ACCEPT_EMPTY_STRING_AS_NULL_OBJECT);
-        this.restClient = RestClient.builder()
-                .requestFactory(requestFactory(properties))
-                .build();
+        this.restClient = restClientBuilder.build();
     }
 
     /**
@@ -325,13 +324,5 @@ public class KorServiceClient {
 
     private static String encode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
-    }
-
-    private static ClientHttpRequestFactory requestFactory(KorServiceProperties properties) {
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(properties.connectTimeout());
-        factory.setReadTimeout(properties.readTimeout());
-
-        return factory;
     }
 }

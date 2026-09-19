@@ -21,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.web.client.RestClient;
 
 import com.mamoki.tour.domain.attraction.dto.AttractionSnapshot;
 import com.mamoki.tour.domain.cache.dto.CachedResponse;
@@ -69,7 +70,7 @@ class VisitTimingServiceTest {
     private TatsCnctrRateClient realClient() {
         return new TatsCnctrRateClient(new TatsCnctrRateProperties(
                 "http://example.invalid", "key", "tour", 1_000, 5,
-                Duration.ofSeconds(1), Duration.ofSeconds(1)));
+                Duration.ofSeconds(1), Duration.ofSeconds(1)), RestClient.builder());
     }
 
     @Test

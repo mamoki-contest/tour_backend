@@ -14,6 +14,7 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.client.RestClient;
 
 import com.mamoki.tour.domain.currentaccess.dto.RoadFlowView;
 import com.mamoki.tour.domain.currentaccess.dto.RoadFlowView.RoadSegmentView;
@@ -36,7 +37,7 @@ class ItsContractTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        client = new ItsClient(properties("https://openapi.its.go.kr:9443", "test-key"));
+        client = new ItsClient(properties("https://openapi.its.go.kr:9443", "test-key"), RestClient.builder());
         response = client.parse(fixture());
     }
 
@@ -105,7 +106,7 @@ class ItsContractTest {
     @Test
     @DisplayName("인증키가 없으면 호출하지 않고 실패로 알린다")
     void refusesToCallWithoutApiKey() {
-        ItsClient keyless = new ItsClient(properties("https://openapi.its.go.kr:9443", ""));
+        ItsClient keyless = new ItsClient(properties("https://openapi.its.go.kr:9443", ""), RestClient.builder());
 
         assertThatThrownBy(() -> keyless.trafficInfoJson(
                 new BigDecimal("37.8050"), new BigDecimal("128.9060")))
