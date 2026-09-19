@@ -165,7 +165,7 @@ class ItsContractTest {
     void keepsTopRoadsOnly() {
         RoadFlowView view = ItsItemConverter.convert(response.items());
 
-        // fixture 에는 도로명이 여덟 가지 있다.
+        // fixture 에는 이름 있는 도로가 일곱 가지 있다(이름 없음 표기 '-' 는 도로가 아니다).
         assertThat(view.roads()).hasSize(5);
         assertThat(view.roads()).extracting(RoadSegmentView::linkCount)
                 .containsExactly(12, 12, 6, 6, 2);
@@ -174,6 +174,8 @@ class ItsContractTest {
         assertThat(view.roads().get(0).averageTravelTime()).isCloseTo(38.9, within(0.05));
         // 구간 수가 같으면 도로명 순으로 가른다.
         assertThat(view.roads().get(1).roadName()).isEqualTo("해안로");
+        // 구간 2개짜리 도로 셋 중 도로명이 가장 앞서는 것이 다섯 번째 자리를 차지한다.
+        assertThat(view.roads().get(4).roadName()).isEqualTo("경포로463번안길");
     }
 
     @Test
@@ -232,18 +234,44 @@ class ItsContractTest {
     }
 
     /**
-     * 공급자가 이름 자리에 {@code "-"} 를 넣어 보내는 구간이 있다. 지금은 빈 문자열만 걸러내서
-     * 이 값이 도로명으로 그대로 살아남고, fixture 에서는 다섯 번째 도로가 되어 응답에 담긴다.
-     *
-     * <p>이름 없는 구간을 목록에 담지 않으려던 뜻과 어긋나는 동작이라 별도 이슈(#64)로 올렸다.
-     * 고치면 이 테스트가 먼저 깨지며, 그때 기대값을 함께 바꾼다.
+     * 공급자는 이름이 없는 구간의 도로명을 빈 문자열이 아니라 {@code "-"} 로 내려준다(#64).
+     * 이름이 아니라 이름 없음의 표기이므로 빈 문자열과 똑같이 다룬다.
      */
     @Test
-    @DisplayName("이름 자리에 '-' 만 온 구간도 지금은 도로 하나로 담긴다")
-    void dashIsTreatedAsARoadName() {
+    @DisplayName("이름 자리에 '-' 만 온 구간은 도로 목록에 담지 않는다")
+    void dashIsNotARoadName() {
         RoadFlowView view = ItsItemConverter.convert(response.items());
 
-        assertThat(view.roads()).extracting(RoadSegmentView::roadName).contains("-");
+        assertThat(view.roads()).extracting(RoadSegmentView::roadName).doesNotContain("-");
+        // 목록에서만 빠진다. 관측 구간 수 44 에는 '-' 구간 2개가 그대로 들어 있다.
+        assertThat(view.linkCount()).isEqualTo(44);
+    }
+
+    @Test
+    @DisplayName("글자도 숫자도 없는 이름은 이름 없음으로 다룬다")
+    void punctuationOnlyNamesAreNameless() {
+        RoadFlowView view = ItsItemConverter.convert(List.of(
+                item("경포로", "40", "10.0"),
+                item("-", "20", "10.0"),
+                item(" - ", "20", "10.0"),
+                item("--", "20", "10.0"),
+                item("—", "20", "10.0"),
+                item(".", "20", "10.0")));
+
+        assertThat(view.linkCount()).isEqualTo(6);
+        assertThat(view.roads()).extracting(RoadSegmentView::roadName).containsExactly("경포로");
+    }
+
+    @Test
+    @DisplayName("글자나 숫자가 하나라도 있으면 도로명으로 살린다")
+    void namesWithLettersOrDigitsSurvive() {
+        RoadFlowView view = ItsItemConverter.convert(List.of(
+                item("경포로463번길", "40", "10.0"),
+                item("7번국도", "40", "10.0"),
+                item("국도-7", "40", "10.0")));
+
+        assertThat(view.roads()).extracting(RoadSegmentView::roadName)
+                .containsExactlyInAnyOrder("경포로463번길", "7번국도", "국도-7");
     }
 
     // --- 도우미 ---------------------------------------------------------------

@@ -11,7 +11,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * @param speed       현재 통행 속도(km/h). 문자열로 온다.
  * @param travelTime  구간 통행시간(초). 문자열로 온다.
  * @param createdDate 관측 생성시각 yyyyMMddHHmmss. 5분 단위로 갱신된다.
- * @param roadName    도로명. 이름 없는 구간은 빈 문자열로 온다.
+ * @param roadName    도로명. 이름 없는 구간은 빈 문자열이 아니라 {@code "-"} 로 온다(#64).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record ItsItem(
