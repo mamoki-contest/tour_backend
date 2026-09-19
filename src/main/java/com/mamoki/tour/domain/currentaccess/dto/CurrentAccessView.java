@@ -24,13 +24,16 @@ public record CurrentAccessView(
         @Schema(description = "주변 도로의 현재 소통")
         RoadFlowView road,
 
-        @Schema(description = "주변 주차 여건")
+        @Schema(description = """
+                주변 주차 여건. 도로와 다른 공급자에서 오며 출처도 따로 담깁니다
+                (parking.source). 커버리지가 달라 한쪽이 비어도 다른 쪽은 채워집니다""")
         ParkingView parking,
 
         @Schema(description = "조회 시각. 공급자의 관측 생성시각과 구분합니다")
         LocalDateTime checkedAt,
 
-        @Schema(description = "데이터 출처", example = "국가교통정보센터")
+        @Schema(description = "도로 소통의 출처. 주차 출처는 parking.source 에 있습니다",
+                example = "국가교통정보센터")
         String source
 ) {
 }

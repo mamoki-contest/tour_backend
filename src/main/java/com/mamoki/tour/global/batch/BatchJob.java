@@ -24,6 +24,9 @@ public enum BatchJob {
     /** 내려받은 주요관광지점 입장객통계 엑셀을 적재한다. */
     VISITOR_STATS("visitor-stats", "주요관광지점 입장객통계 적재"),
 
+    /** 내려받은 전국주차장정보표준데이터 CSV 에서 강원 행을 적재한다. */
+    PARKING_CATALOG("parking-catalog", "전국주차장정보표준데이터 적재"),
+
     /**
      * 카탈로그에 잇지 못한 원천 이름을 카카오 로컬 API 로 찾아 매핑 표에 남긴다.
      *

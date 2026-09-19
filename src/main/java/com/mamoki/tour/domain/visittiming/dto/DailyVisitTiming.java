@@ -9,14 +9,14 @@ import io.swagger.v3.oas.annotations.media.Schema;
 /**
  * 상세 응답에 담는 하루치 판정.
  *
- * <p>{@link DailyConcentration} 과 달리 공급자 원본값을 담지 않는다. 30일을 한 번에 내려주면
+ * <p>{@link DailyConcentration} 과 달리 공급자 원본값을 담지 않는다. 지원 범위를 한 번에 내려주면
  * 값이 있을 때 장소 사이의 절대 비교가 쉬워지므로, 여기서도 <b>그 장소 자신의 분포 안에서의
  * 상대 수준</b>만 내려준다.
  *
  * @param status 이 날의 상대 수준. 예측이 없거나 판정할 만큼 모이지 않았으면 {@code NO_DATA}.
  */
 @Schema(description = """
-        하루치 판정. status 는 이 장소 자신의 30일 분포 안에서의 상대 수준입니다.
+        하루치 판정. status 는 이 장소 자신의 지원 범위 안 분포에서의 상대 수준입니다.
         다른 관광지의 같은 날 status 와 비교해 혼잡도 순위로 쓰면 안 됩니다.""")
 public record DailyVisitTiming(
 

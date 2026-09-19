@@ -8,8 +8,11 @@ spring:
     default: local
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
+    # 빈 값은 지정하지 않은 것으로 취급된다(BlankValueEnvironmentPostProcessor).
+    # 계정 이름은 비어 있으면 뜻이 없으므로 기본값을 두지 않고 기동을 멈춘다.
     username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
+    # 비밀번호 없는 계정은 실제로 쓰이므로 빈 값을 기본값으로 되살린다.
+    password: ${DB_PASSWORD:}
   sql:
     init:
       # MySQL 은 내장 DB 가 아니므로 always 로 지정해야 data.sql 이 실행된다.
@@ -31,6 +34,23 @@ springdoc:
     path: /v3/api-docs
 
 tour:
+  batch:
+    schedule:
+      # 적재·수집 스케줄. 기본은 모두 꺼짐이며, 하나도 켜지 않으면 스케줄러 자체가 뜨지 않는다.
+      # 켜는 순간 사람이 명령을 치지 않아도 외부 API 호출이 나가므로 배포만으로 켜지지 않게 한다.
+      # --job=... 으로 띄운 배치 프로세스에서는 켜져 있어도 뜨지 않는다.
+      #
+      # cron 과 시간대의 기본값은 BatchScheduleProperties 상수가 유일한 출처다. 여기에 다시
+      # 적으면 한쪽만 바뀌어도 알 수 없으므로, 비워 두고 바꿀 때만 환경변수로 준다.
+      # 기본값: 카탈로그 매월 1일 02:00, 언급량 매월 1일 03:00, 시간대 Asia/Seoul.
+      zone: ${BATCH_SCHEDULE_ZONE:}
+      mention:
+        enabled: ${BATCH_SCHEDULE_MENTION_ENABLED:false}
+        cron: ${BATCH_SCHEDULE_MENTION_CRON:}
+      catalog:
+        # 카탈로그 적재는 실패했을 때 사람이 봐야 하는 작업이라 운영에서도 켜지 않는 쪽을 권한다.
+        enabled: ${BATCH_SCHEDULE_CATALOG_ENABLED:false}
+        cron: ${BATCH_SCHEDULE_CATALOG_CRON:}
   api:
     kor-service:
       # 공공데이터포털 API 게이트웨이. 로컬에서 HTTPS 가 막히면 .env 로 http 를 지정한다.
@@ -101,6 +121,21 @@ tour:
       # 응답에 링크 좌표가 없어 가까운 도로를 고를 수 없어 범위로 좁힌다. 넓히면 관광지와
       # 상관없는 간선도로가 섞이고, 좁히면 시골에서 빈 응답이 된다.
       half-span: ${ITS_HALF_SPAN:0.005}
+      connect-timeout: 5s
+      # 상세 응답 안에서 부르므로 오래 잡지 않는다.
+      read-timeout: 10s
+    gn-its:
+      # 강릉시 교통정보 조회서비스(실시간 주차). 강원에서 유일하게 실시간 잔여면을 여는 지자체다.
+      # 인증키는 KorService2 계열과 같은 공공데이터포털 키지만 기관코드가 달라 base-url 은 따로 둔다.
+      base-url: ${GN_ITS_BASE_URL:https://apis.data.go.kr/4201000/GNitsTrafficInfoService_1.0}
+      service-key: ${KOR_SERVICE_KEY:}
+      # 주차장이 13곳뿐이라 1회 호출로 끝낸다. pageNo 가 범위를 넘으면 빈 목록이 아니라
+      # 전체를 다시 돌려주므로 페이지를 도는 순간 무한루프가 된다.
+      rows-per-page: ${GN_ITS_ROWS:100}
+      # 짧은 간격 연속 호출 시 HTTP 200 에 본문이 {} 만 오는 조용한 스로틀이 있다.
+      # 그때 다시 물어볼 횟수와 기다릴 시간. 실측상 8초 이상 간격이면 스로틀이 사라진다.
+      throttle-retries: ${GN_ITS_THROTTLE_RETRIES:2}
+      throttle-backoff: ${GN_ITS_THROTTLE_BACKOFF:800ms}
       connect-timeout: 5s
       # 상세 응답 안에서 부르므로 오래 잡지 않는다.
       read-timeout: 10s

@@ -14,10 +14,10 @@ import io.swagger.v3.oas.annotations.media.Schema;
  *
  * <p>집중률 원본 예측값은 담지 않는다. 공급자가 공식 등급 기준을 주지 않아 절대 수준으로
  * 읽을 수 없고, 값을 노출하면 서로 다른 관광지를 그 값으로 줄 세우게 되기 때문이다.
- * 여기서 제공하는 것은 <b>같은 장소의 30일 분포 안에서의 상대 수준</b>뿐이다.
+ * 여기서 제공하는 것은 <b>같은 장소의 지원 범위 안 분포에서의 상대 수준</b>뿐이다.
  */
 @Schema(description = """
-        날짜 탐색 결과. status 의 LOW/NORMAL/HIGH 는 그 장소 자신의 향후 30일 분포 안에서의
+        날짜 탐색 결과. status 의 LOW/NORMAL/HIGH 는 그 장소 자신의 지원 범위 안 분포에서의
         상대 수준입니다. 서로 다른 관광지의 status 를 모아 혼잡도 순위로 쓰면 안 됩니다.""")
 public record VisitTiming(
 
@@ -41,10 +41,15 @@ public record VisitTiming(
                 example = "30")
         int forecastDays,
 
-        @Schema(description = "지원 범위 시작일(오늘)", example = "2026-09-07")
+        @Schema(description = """
+                지원 범위 시작일. 공급자 예측 창의 첫 날이며, 지난 날짜는 담지 않으므로
+                보통 오늘입니다.""", example = "2026-09-19")
         LocalDate supportedFrom,
 
-        @Schema(description = "지원 범위 종료일(오늘부터 30일째)", example = "2026-10-06")
+        @Schema(description = """
+                지원 범위 종료일. 공급자 예측 창의 마지막 날입니다. 창의 기준일이 하루 뒤처지는
+                날이 있어 오늘부터 29일째일 수도, 30일째일 수도 있습니다. 고정으로 가정하지 마세요.""",
+                example = "2026-10-18")
         LocalDate supportedTo,
 
         @Schema(description = "예측 데이터의 신선도. AVAILABLE / STALE / NO_DATA")

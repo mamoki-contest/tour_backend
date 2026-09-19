@@ -162,9 +162,9 @@ public class AttractionService {
      */
     private AttractionListResponse searchWholeRange(AttractionSearchRequest request) {
         RegionCode region = resolveRegion(request.sigunguCode());
-        LocalDateTime catalogImportedAt = attractionRepository.findLatestImportedAt();
+        LocalDateTime catalogChangedAt = attractionRepository.findLatestCatalogChangeAt();
 
-        if (catalogImportedAt == null) {
+        if (catalogChangedAt == null) {
             // 카탈로그를 아직 적재하지 않은 환경. 공급자에게 물으면 답이 있으므로 NO_DATA 로
             // 위장하지 않는다. 다만 이 경로는 상한에서 잘릴 수 있으니 흔적을 남긴다.
             log.warn("관광지 카탈로그가 비어 있어 공급자 응답으로 정렬합니다. "
@@ -172,7 +172,7 @@ public class AttractionService {
             return searchWholeRangeFromProvider(request, region);
         }
 
-        return searchWholeRangeFromCatalog(request, region, catalogImportedAt);
+        return searchWholeRangeFromCatalog(request, region, catalogChangedAt);
     }
 
     /**
@@ -183,7 +183,7 @@ public class AttractionService {
      */
     private AttractionListResponse searchWholeRangeFromCatalog(AttractionSearchRequest request,
                                                                RegionCode region,
-                                                               LocalDateTime catalogImportedAt) {
+                                                               LocalDateTime catalogChangedAt) {
         int page = request.pageOrDefault();
         int size = request.sizeOrDefault();
 
@@ -193,7 +193,7 @@ public class AttractionService {
         List<AttractionResponse> ordered = orderBySort(toResponses(withinBounds, request), request.sort());
 
         return new AttractionListResponse(pageOf(ordered, page, size), ordered.size(), page, size,
-                request.sort(), DataStatus.AVAILABLE, catalogImportedAt,
+                request.sort(), DataStatus.AVAILABLE, catalogChangedAt,
                 KorServiceItemConverter.SOURCE);
     }
 

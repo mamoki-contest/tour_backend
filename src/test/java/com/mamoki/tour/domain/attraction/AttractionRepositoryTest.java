@@ -33,14 +33,15 @@ class AttractionRepositoryTest {
     private RegionCodeRepository regionCodeRepository;
 
     /**
-     * 경계 조회와 시·군 조회는 표가 비어 있다고 보고 결과를 통째로 비교한다.
+     * 앞선 테스트가 남긴 관광지를 비운다.
      *
-     * <p>앞선 테스트 클래스가 커밋해 둔 카탈로그가 남아 있으면 그 행들이 섞여 들어온다.
-     * 어느 클래스가 먼저 도느냐에 따라 결과가 갈리므로 여기서 먼저 비운다. 이 클래스는
-     * {@code @Transactional} 이라 여기서 지운 것도 테스트가 끝나면 함께 되돌아간다.
+     * <p>이 클래스는 {@code @Transactional} 이라 자기 것은 롤백되지만, 적재 테스트들은
+     * 트랜잭션 밖에서 쓰고 {@code @BeforeEach} 에서만 지운다. 그래서 마지막 테스트가 남긴
+     * 행이 다음 클래스까지 따라온다. 지도 경계 조회처럼 테이블 전체를 보는 검사는 그 행에
+     * 걸려 실행 순서에 따라 깨진다. 여기서 지우는 것도 이 트랜잭션과 함께 롤백된다.
      */
     @BeforeEach
-    void clearCommittedCatalog() {
+    void reset() {
         attractionRepository.deleteAllInBatch();
     }
 
@@ -125,17 +126,17 @@ class AttractionRepositoryTest {
     }
 
     @Test
-    @DisplayName("카탈로그를 마지막으로 적재한 시각을 돌려주고, 비어 있으면 null 이다")
-    void findLatestImportedAt() {
+    @DisplayName("카탈로그 내용이 마지막으로 바뀜 시각을 돌려주고, 비어 있으면 null 이다")
+    void findLatestCatalogChangeAt() {
         attractionRepository.deleteAll();
         attractionRepository.flush();
 
-        assertThat(attractionRepository.findLatestImportedAt()).isNull();
+        assertThat(attractionRepository.findLatestCatalogChangeAt()).isNull();
 
         RegionCode gangneung = regionCodeRepository.findByLawdCode("51150").orElseThrow();
         attractionRepository.saveAndFlush(attraction("30", "오죽헌", gangneung, null, null));
 
-        assertThat(attractionRepository.findLatestImportedAt()).isNotNull();
+        assertThat(attractionRepository.findLatestCatalogChangeAt()).isNotNull();
     }
 
     private Attraction attraction(String contentId, String name, RegionCode regionCode,
