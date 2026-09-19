@@ -8,6 +8,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -24,8 +25,11 @@ import com.mamoki.tour.domain.attraction.dto.OnlineMentionView;
 import com.mamoki.tour.domain.attraction.dto.TmapRankView;
 import com.mamoki.tour.domain.attraction.dto.VisitorStatsView;
 import com.mamoki.tour.domain.attraction.entity.Attraction;
+import com.mamoki.tour.domain.attraction.repository.AttractionCatalogImportRepository;
 import com.mamoki.tour.domain.attraction.repository.AttractionRepository;
+import com.mamoki.tour.domain.attraction.service.SignalLookupService.ActiveSignalVersions;
 import com.mamoki.tour.domain.attraction.support.AttractionSortOrder;
+import com.mamoki.tour.domain.attraction.support.AttractionSortOrder.Ordered;
 import com.mamoki.tour.domain.attraction.support.MapBounds;
 import com.mamoki.tour.domain.cache.dto.CachedResponse;
 import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
@@ -57,6 +61,11 @@ import com.mamoki.tour.infra.korservice.dto.KorServiceResponse;
  * 4,700곳대 중 앞쪽 3,000곳만 줄 세우고 나머지는 경고 로그만 남기고 사라졌다. 카탈로그는
  * 언급량 수집이 순회하는 바로 그 집합이라, 카탈로그를 대상으로 삼으면 언급량을 산정한
  * 집합과 정렬하는 집합이 같아진다. 공급자 호출도 필요 없다.
+ *
+ * <p><b>그 읽기는 짧게 캐시한다(#71).</b> 한 번의 정렬·경계 조회가 카탈로그 전수를 읽고 신호
+ * {@code IN} 질의를 세 건 내는데, 페이지를 넘기거나 지도를 미는 동안 같은 일이 되풀이된다.
+ * 값이 바뀌는 길은 스냅샷 교체와 카탈로그 재적재뿐이라 둘을 캐시 키에 담았다. 무효화를 따로
+ * 부르는 자리는 없다 — 값이 바뀌면 키가 달라져 자연히 새로 읽는다.
  */
 @Service
 public class AttractionService {
@@ -107,7 +116,17 @@ public class AttractionService {
     private final SignalLookupService signalLookupService;
     private final VisitTimingService visitTimingService;
     private final AttractionRepository attractionRepository;
+    private final AttractionCatalogImportRepository catalogImportRepository;
     private final AttractionSortOrder sortOrder = new AttractionSortOrder();
+
+    /**
+     * 정렬·경계 조회가 되풀이해 읽는 카탈로그와 신호. 항목은 늘 하나다(#71).
+     *
+     * <p>여러 요청 스레드가 같이 읽고 쓴다. 담기는 값은 전부 불변 목록·맵이라 꺼내 간 쪽이
+     * 나중에 바뀌는 일은 없고, 같은 키를 두 스레드가 동시에 놓쳐 둘 다 읽어 오더라도 같은
+     * 값을 두 번 쓸 뿐이라 잠글 이유가 없다.
+     */
+    private final Map<CatalogKey, CatalogView> catalogCache = new ConcurrentHashMap<>();
 
     public AttractionService(KorServiceClient korServiceClient,
                              ExternalApiCacheService cacheService,
@@ -115,7 +134,8 @@ public class AttractionService {
                              CenterRankService centerRankService,
                              SignalLookupService signalLookupService,
                              VisitTimingService visitTimingService,
-                             AttractionRepository attractionRepository) {
+                             AttractionRepository attractionRepository,
+                             AttractionCatalogImportRepository catalogImportRepository) {
         this.korServiceClient = korServiceClient;
         this.cacheService = cacheService;
         this.regionCodeRepository = regionCodeRepository;
@@ -123,6 +143,7 @@ public class AttractionService {
         this.signalLookupService = signalLookupService;
         this.visitTimingService = visitTimingService;
         this.attractionRepository = attractionRepository;
+        this.catalogImportRepository = catalogImportRepository;
     }
 
     /**
@@ -150,7 +171,7 @@ public class AttractionService {
 
         List<AttractionResponse> items = toResponses(fetched.snapshots(), request);
 
-        return new AttractionListResponse(items, fetched.totalCount(), page, size, null,
+        return new AttractionListResponse(items, fetched.totalCount(), page, size, null, false,
                 fetched.status(), fetched.collectedAt(), KorServiceItemConverter.SOURCE);
     }
 
@@ -162,6 +183,13 @@ public class AttractionService {
      */
     private AttractionListResponse searchWholeRange(AttractionSearchRequest request) {
         RegionCode region = resolveRegion(request.sigunguCode());
+        CatalogKey key = catalogKey(region, request.contentTypeId());
+        CatalogView cached = key == null ? null : catalogCache.get(key);
+
+        if (cached != null) {
+            return searchWholeRangeFromCatalog(request, cached);
+        }
+
         LocalDateTime catalogChangedAt = attractionRepository.findLatestCatalogChangeAt();
 
         if (catalogChangedAt == null) {
@@ -172,36 +200,90 @@ public class AttractionService {
             return searchWholeRangeFromProvider(request, region);
         }
 
-        return searchWholeRangeFromCatalog(request, region, catalogChangedAt);
+        // 적재 이력이 없으면 기준 시점도 캐시 키도 카탈로그 변경 시각에 기댈 수밖에 없다.
+        // 그 값은 무효화 신호로 쓰기에 믿을 수 없어(#69), 그때는 캐시하지 않는다.
+        CatalogView view = readCatalogView(region, request.contentTypeId(),
+                key == null ? catalogChangedAt : key.lastImportedAt());
+
+        if (key != null) {
+            cacheCatalogView(key, view);
+        }
+
+        return searchWholeRangeFromCatalog(request, view);
     }
 
     /**
-     * 카탈로그를 조회 조건으로 좁혀 경계로 거르고 정렬한 뒤 페이지를 나눈다.
+     * 카탈로그 읽기를 다시 써도 되는지 가르는 키(#71).
+     *
+     * <p>정렬·경계 조회는 매번 카탈로그 전수(강원 4,700곳대)를 읽고 신호 {@code IN} 질의를
+     * 세 건 낸다. 페이지를 넘기거나 지도를 미는 동안 같은 일을 되풀이하는데, 그 사이에 값이
+     * 바뀌는 길은 <b>스냅샷 교체</b>와 <b>카탈로그 재적재</b> 둘뿐이다. 둘 다 키에 담아 두면
+     * 무효화를 따로 부를 자리가 없다 — 값이 바뀌면 키가 달라져 자연히 새로 읽는다.
+     *
+     * <p>조회 조건(시·군·분류)도 키에 담는다. 담은 것이 조건으로 좁힌 결과라 조건이 다르면
+     * 다른 항목이다. 경계는 담지 않는다. 걸러내기는 읽어 둔 목록 위에서 하므로, 지도를 미는
+     * 동안에는 같은 항목을 계속 쓴다.
+     *
+     * @return 적재 이력이 없으면 null. 그때는 캐시하지 않는다.
+     */
+    private CatalogKey catalogKey(RegionCode region, String contentTypeId) {
+        LocalDateTime lastImportedAt = catalogImportRepository.findLatestCompletedAt();
+
+        if (lastImportedAt == null) {
+            return null;
+        }
+
+        return new CatalogKey(signalLookupService.activeSignalVersions(), lastImportedAt,
+                region == null ? null : region.getLawdCode(), contentTypeId);
+    }
+
+    /**
+     * 항목을 하나만 둔다.
+     *
+     * <p>되풀이되는 것은 같은 조건의 연속 조회(페이지 넘김·지도 이동)라 항목 하나로 거의
+     * 다 잡힌다. 조건이 바뀌면 이전 항목은 다시 쓰이지 않는데, 카탈로그 전수를 담고 있어
+     * 들고 있을 이유가 없다. 새 의존성을 들이지 않고 만료도 두지 않는 이유가 여기 있다.
+     */
+    private void cacheCatalogView(CatalogKey key, CatalogView view) {
+        catalogCache.clear();
+        catalogCache.put(key, view);
+    }
+
+    /** 읽어 둘 한 벌. 카탈로그와 그 카탈로그에 대한 신호를 함께 담는다. 따로 늙으면 안 된다. */
+    private CatalogView readCatalogView(RegionCode region, String contentTypeId,
+                                        LocalDateTime collectedAt) {
+        List<AttractionSnapshot> catalog = readCatalog(region, contentTypeId);
+
+        return new CatalogView(catalog, loadSignals(catalog), collectedAt);
+    }
+
+    /**
+     * 읽어 둔 카탈로그를 경계로 거르고 정렬한 뒤 페이지를 나눈다.
      *
      * <p>조건에 맞는 장소가 없는 것은 정보 없음이 아니다. {@code AVAILABLE} + 빈 목록으로
      * 돌려줘, 프론트가 `조건에 맞는 곳이 없음`과 `데이터를 얻지 못함`을 구분할 수 있게 한다.
      */
     private AttractionListResponse searchWholeRangeFromCatalog(AttractionSearchRequest request,
-                                                               RegionCode region,
-                                                               LocalDateTime catalogChangedAt) {
+                                                               CatalogView view) {
         int page = request.pageOrDefault();
         int size = request.sizeOrDefault();
 
-        List<AttractionSnapshot> catalog = readCatalog(region, request.contentTypeId());
-        List<AttractionSnapshot> withinBounds = filterByBounds(catalog, request.bounds());
+        List<AttractionSnapshot> withinBounds = filterByBounds(view.snapshots(), request.bounds());
 
-        List<AttractionResponse> ordered = orderBySort(toResponses(withinBounds, request), request.sort());
+        List<AttractionResponse> items = describe(withinBounds, view.signals(),
+                request.sigunguCode(), request.dateMode(), request.visitDate());
+        Ordered ordered = orderBySort(items, request.sort());
 
-        return new AttractionListResponse(pageOf(ordered, page, size), ordered.size(), page, size,
-                request.sort(), DataStatus.AVAILABLE, catalogChangedAt,
-                KorServiceItemConverter.SOURCE);
+        return new AttractionListResponse(pageOf(ordered.items(), page, size), ordered.items().size(),
+                page, size, request.sort(), ordered.applied(), DataStatus.AVAILABLE,
+                view.collectedAt(), KorServiceItemConverter.SOURCE);
     }
 
     /**
      * 카탈로그가 비어 있을 때만 쓰는 공급자 경로.
      *
      * <p>활성 언급량 스냅샷이 없으면 정렬 기준 자체가 없다. 그때는 순서를 만들어내지 않고
-     * 공급자 순서를 그대로 쓰며, 각 항목의 상태로 그 사실을 알린다.
+     * 공급자 순서를 그대로 쓰며, 각 항목의 상태와 응답의 {@code sortApplied} 로 알린다(#65).
      */
     private AttractionListResponse searchWholeRangeFromProvider(AttractionSearchRequest request,
                                                                 RegionCode region) {
@@ -217,16 +299,21 @@ public class AttractionService {
         // 신호 조회와 정렬 전에 거른다. 경계 밖 장소의 언급량까지 찾을 이유가 없다.
         List<AttractionSnapshot> withinBounds = filterByBounds(fetched.snapshots(), request.bounds());
 
-        List<AttractionResponse> ordered = orderBySort(toResponses(withinBounds, request), request.sort());
+        Ordered ordered = orderBySort(toResponses(withinBounds, request), request.sort());
 
-        return new AttractionListResponse(pageOf(ordered, page, size), ordered.size(), page, size,
-                request.sort(), fetched.status(), fetched.collectedAt(),
+        return new AttractionListResponse(pageOf(ordered.items(), page, size), ordered.items().size(),
+                page, size, request.sort(), ordered.applied(), fetched.status(), fetched.collectedAt(),
                 KorServiceItemConverter.SOURCE);
     }
 
-    /** 경계만 준 요청은 정렬 기준이 없다. 순서를 만들어내지 않고 들어온 순서를 그대로 둔다. */
-    private List<AttractionResponse> orderBySort(List<AttractionResponse> items, AttractionSort sort) {
-        return sort == null ? items : sortOrder.order(items, sort);
+    /**
+     * 경계만 준 요청은 정렬 기준이 없다. 순서를 만들어내지 않고 들어온 순서를 그대로 둔다.
+     *
+     * <p>정렬을 요청해도 산정된 장소가 하나도 없으면 같은 결론이다. 그 판단은
+     * {@link AttractionSortOrder} 가 하고, 여기서는 그 사실을 응답까지 들고 간다(#65).
+     */
+    private Ordered orderBySort(List<AttractionResponse> items, AttractionSort sort) {
+        return sort == null ? Ordered.notApplied(items) : sortOrder.order(items, sort);
     }
 
     /**
@@ -300,20 +387,27 @@ public class AttractionService {
                                              String sigunguCode,
                                              DateMode dateMode,
                                              LocalDate visitDate) {
+
+        return describe(snapshots, loadSignals(snapshots), sigunguCode, dateMode, visitDate);
+    }
+
+    /**
+     * 이미 찾아 둔 신호로 조립한다.
+     *
+     * <p>정렬·경계 조회는 카탈로그 전체의 신호를 한 번 찾아 두고 그 위에서 경계를 거른다.
+     * 지도를 밀 때마다 좁아진 식별자 목록으로 다시 묻지 않기 위해서다(#71). 찾아 둔 신호는
+     * 이 목록의 상위 집합이라, 없는 장소는 그대로 "값 없음" 으로 떨어진다.
+     */
+    private List<AttractionResponse> describe(List<AttractionSnapshot> snapshots,
+                                              Signals signals,
+                                              String sigunguCode,
+                                              DateMode dateMode,
+                                              LocalDate visitDate) {
         Map<String, RegionCode> regionsByLawdCode = regionCodeRepository
                 .findAllByAreaCode(GANGWON_AREA_CODE).stream()
                 .collect(Collectors.toMap(RegionCode::getLawdCode, Function.identity()));
 
         Map<String, Integer> centerRanks = resolveCenterRanks(sigunguCode, snapshots);
-
-        List<String> contentIds = snapshots.stream().map(AttractionSnapshot::contentId).toList();
-        Optional<Map<String, OnlineMentionView>> mentions =
-                signalLookupService.findOnlineMentions(contentIds);
-        Map<String, TmapRankView> tmapRanks = signalLookupService.findTmapRanks(contentIds);
-        Optional<Map<String, VisitorStatsView>> visitorStats =
-                signalLookupService.findVisitorStats(contentIds);
-
-        String ruleVersion = signalLookupService.findMentionRuleVersion().orElse(null);
 
         // 날짜 탐색은 선택 기능이다. 모드를 지정하지 않으면 예측을 조회하지 않는다.
         Map<String, VisitTiming> visitTimings =
@@ -324,11 +418,23 @@ public class AttractionService {
                         snapshot,
                         regionName(regionsByLawdCode, snapshot),
                         centerRanks.get(snapshot.contentId()),
-                        mentionView(mentions, snapshot.contentId(), ruleVersion),
-                        tmapRanks.getOrDefault(snapshot.contentId(), TmapRankView.notAvailable()),
-                        visitorStatsView(visitorStats, snapshot.contentId()),
+                        mentionView(signals.mentions(), snapshot.contentId(), signals.ruleVersion()),
+                        signals.tmapRanks().getOrDefault(snapshot.contentId(),
+                                TmapRankView.notAvailable()),
+                        visitorStatsView(signals.visitorStats(), snapshot.contentId()),
                         visitTimings.get(snapshot.contentId())))
                 .toList();
+    }
+
+    /** 이 장소들에 대한 신호를 한 번에 찾는다. 신호마다 원천이 달라 질의도 따로 나간다. */
+    private Signals loadSignals(List<AttractionSnapshot> snapshots) {
+        List<String> contentIds = snapshots.stream().map(AttractionSnapshot::contentId).toList();
+
+        return new Signals(
+                signalLookupService.findOnlineMentions(contentIds),
+                signalLookupService.findTmapRanks(contentIds),
+                signalLookupService.findVisitorStats(contentIds),
+                signalLookupService.findMentionRuleVersion().orElse(null));
     }
 
     /**
@@ -473,6 +579,36 @@ public class AttractionService {
         }
 
         return new Fetched(all, all.size(), status, first.collectedAt());
+    }
+
+    /**
+     * 한 장소에 붙는 신호들을 한 번에 찾아 둔 것.
+     *
+     * @param mentions     활성 언급량 스냅샷이 없으면 빈 값. 값이 0 인 것과 다르다.
+     * @param visitorStats 활성 입장객 스냅샷이 없으면 빈 값. 적재 전과 미수록을 가른다.
+     * @param ruleVersion  언급량을 만든 검색어 규칙. 스냅샷이 없으면 null.
+     */
+    private record Signals(Optional<Map<String, OnlineMentionView>> mentions,
+                           Map<String, TmapRankView> tmapRanks,
+                           Optional<Map<String, VisitorStatsView>> visitorStats,
+                           String ruleVersion) {
+    }
+
+    /**
+     * 캐시 키(#71). 여기 담긴 것 중 하나라도 달라지면 읽어 둔 값을 쓰지 않는다.
+     *
+     * @param signalVersions 활성 스냅샷 식별자들. 스냅샷을 교체하면 달라진다.
+     * @param lastImportedAt 마지막으로 적재를 마친 시각. 재적재하면 달라진다.
+     * @param lawdCode       시·군을 지정하지 않았으면 null.
+     * @param contentTypeId  분류를 지정하지 않았으면 null.
+     */
+    private record CatalogKey(ActiveSignalVersions signalVersions, LocalDateTime lastImportedAt,
+                              String lawdCode, String contentTypeId) {
+    }
+
+    /** 읽어 둔 카탈로그 한 벌. 카탈로그와 신호는 같은 시점의 것이라 함께 담고 함께 버린다. */
+    private record CatalogView(List<AttractionSnapshot> snapshots, Signals signals,
+                               LocalDateTime collectedAt) {
     }
 
     /** 공급자에서 받아온 한 묶음과 그 데이터 상태. */

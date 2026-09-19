@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.web.client.RestClient;
 
 import com.mamoki.tour.domain.attraction.entity.Attraction;
 import com.mamoki.tour.domain.attraction.repository.AttractionRepository;
@@ -92,7 +93,7 @@ class RelatedPlaceMappingCollectTest {
     private TarRlteTarClient realClient() {
         return new TarRlteTarClient(new TarRlteTarProperties(
                 "http://example.invalid", "key", "tour", "202607", 1_000, 1,
-                Duration.ofSeconds(1), Duration.ofSeconds(1)));
+                Duration.ofSeconds(1), Duration.ofSeconds(1)), RestClient.builder());
     }
 
     private void saveAttraction(String contentId, String name) {

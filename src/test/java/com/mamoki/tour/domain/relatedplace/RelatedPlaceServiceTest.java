@@ -24,6 +24,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.web.client.RestClient;
 
 import com.mamoki.tour.domain.attraction.dto.AttractionSnapshot;
 import com.mamoki.tour.domain.attraction.support.PlaceNameNormalizer;
@@ -119,7 +120,7 @@ class RelatedPlaceServiceTest {
     private TarRlteTarClient realClient() {
         return new TarRlteTarClient(new TarRlteTarProperties(
                 "http://example.invalid", "key", "tour", "202607", 1_000, 5,
-                Duration.ofSeconds(1), Duration.ofSeconds(1)));
+                Duration.ofSeconds(1), Duration.ofSeconds(1)), RestClient.builder());
     }
 
     @Test

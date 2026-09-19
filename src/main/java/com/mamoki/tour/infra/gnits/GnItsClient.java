@@ -11,8 +11,7 @@ import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.client.ClientHttpRequestFactory;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -62,13 +61,13 @@ public class GnItsClient {
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
 
-    public GnItsClient(GnItsProperties properties) {
+    public GnItsClient(
+            GnItsProperties properties,
+            @Qualifier("gnItsRestClientBuilder") RestClient.Builder restClientBuilder) {
         this.properties = properties;
         this.objectMapper = new ObjectMapper()
                 .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
-        this.restClient = RestClient.builder()
-                .requestFactory(requestFactory(properties))
-                .build();
+        this.restClient = restClientBuilder.build();
     }
 
     public String parkInfoJson() {
@@ -227,13 +226,5 @@ public class GnItsClient {
             throw new ExternalApiException(ApiProvider.GN_ITS_PARKING,
                     "강릉시 교통정보 조회서비스 재시도 대기가 중단되었습니다.", e);
         }
-    }
-
-    private static ClientHttpRequestFactory requestFactory(GnItsProperties properties) {
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(properties.connectTimeout());
-        factory.setReadTimeout(properties.readTimeout());
-
-        return factory;
     }
 }

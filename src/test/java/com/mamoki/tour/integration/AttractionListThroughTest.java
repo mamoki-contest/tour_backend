@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import javax.sql.DataSource;
+
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,6 +26,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -46,14 +49,28 @@ import com.sun.net.httpserver.HttpServer;
  *   <li>캐시도 없고 공급자도 실패 → {@code NO_DATA}, 그래도 HTTP 200</li>
  * </ol>
  *
- * <p>가짜 공급자는 {@code MockRestServiceServer} 가 아니라 실제 HTTP 서버다. 각
- * 클라이언트가 {@code RestClient} 를 생성자 안에서 직접 만들어 쓰기 때문에 밖에서
- * 요청 팩토리를 갈아 끼울 자리가 없다(#66). 주소만 바꿔 끼울 수 있어 이 방법을 택했다.
+ * <p>가짜 공급자는 {@code MockRestServiceServer} 가 아니라 실제 HTTP 서버다. 처음에는
+ * 그럴 수밖에 없었다 — 클라이언트가 {@code RestClient} 를 생성자 안에서 직접 만들어 밖에서
+ * 요청 팩토리를 갈아 끼울 자리가 없었다(#66). #66 을 고친 뒤로는 선택이 됐고, 이 갈래들은
+ * <b>실제 소켓을 지나는 쪽</b>으로 남겨 둔다. 직렬화·연결까지 진짜로 태우는 자리가 하나는
+ * 있어야 하기 때문이다. 요청 URI 를 선언적으로 검사하는 쪽은
+ * {@link AttractionListMockServerThroughTest} 가 맡는다.
+ *
+ * <p>스키마는 이 테스트 전용이다({@link Schema}). 컨텍스트를 하나 더 만드는 이상
+ * {@code create-drop} 도 한 번 더 도는데, 그 대상이 다른 테스트가 쓰는 스키마면 안 된다(#86).
  */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@ContextConfiguration(initializers = AttractionListThroughTest.Schema.class)
 class AttractionListThroughTest {
+
+    /** 공유 스키마 이름에 이 접미어를 붙인 스키마를 쓴다. 없으면 만든다. */
+    static class Schema extends ThroughTestSchemaInitializer {
+        Schema() {
+            super("_through");
+        }
+    }
 
     private static final AtomicInteger providerCalls = new AtomicInteger();
     private static final AtomicBoolean providerFails = new AtomicBoolean();
@@ -65,6 +82,9 @@ class AttractionListThroughTest {
 
     @Autowired
     private ExternalApiCacheRepository cacheRepository;
+
+    @Autowired
+    private DataSource dataSource;
 
     @BeforeAll
     static void startProvider() throws IOException {
@@ -106,6 +126,18 @@ class AttractionListThroughTest {
         cacheRepository.deleteAll();
         providerCalls.set(0);
         providerFails.set(false);
+    }
+
+    @Test
+    @DisplayName("다른 테스트와 스키마를 공유하지 않는다")
+    void usesItsOwnSchema() throws Exception {
+        try (java.sql.Connection connection = dataSource.getConnection()) {
+            String schema = connection.getCatalog();
+
+            assertThat(schema)
+                    .withFailMessage("관통 테스트는 전용 스키마를 써야 한다. 지금 접속한 곳: %s", schema)
+                    .endsWith("_through");
+        }
     }
 
     @Test

@@ -17,6 +17,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.web.client.RestClient;
 
 import com.mamoki.tour.domain.attraction.dto.AttractionDetailResponse;
 import com.mamoki.tour.domain.attraction.service.AttractionDetailService;
@@ -93,7 +94,7 @@ class AttractionDetailServiceTest {
     private KorServiceClient realClient() {
         return new KorServiceClient(new KorServiceProperties(
                 "http://example.invalid", "key", "tour",
-                java.time.Duration.ofSeconds(1), java.time.Duration.ofSeconds(1)));
+                java.time.Duration.ofSeconds(1), java.time.Duration.ofSeconds(1)), RestClient.builder());
     }
 
     @Test
