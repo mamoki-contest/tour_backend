@@ -26,6 +26,7 @@ import com.mamoki.tour.domain.attraction.dto.VisitorStatsView;
 import com.mamoki.tour.domain.attraction.entity.Attraction;
 import com.mamoki.tour.domain.attraction.repository.AttractionRepository;
 import com.mamoki.tour.domain.attraction.support.AttractionSortOrder;
+import com.mamoki.tour.domain.attraction.support.AttractionSortOrder.Ordered;
 import com.mamoki.tour.domain.attraction.support.MapBounds;
 import com.mamoki.tour.domain.cache.dto.CachedResponse;
 import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
@@ -150,7 +151,7 @@ public class AttractionService {
 
         List<AttractionResponse> items = toResponses(fetched.snapshots(), request);
 
-        return new AttractionListResponse(items, fetched.totalCount(), page, size, null,
+        return new AttractionListResponse(items, fetched.totalCount(), page, size, null, false,
                 fetched.status(), fetched.collectedAt(), KorServiceItemConverter.SOURCE);
     }
 
@@ -190,10 +191,10 @@ public class AttractionService {
         List<AttractionSnapshot> catalog = readCatalog(region, request.contentTypeId());
         List<AttractionSnapshot> withinBounds = filterByBounds(catalog, request.bounds());
 
-        List<AttractionResponse> ordered = orderBySort(toResponses(withinBounds, request), request.sort());
+        Ordered ordered = orderBySort(toResponses(withinBounds, request), request.sort());
 
-        return new AttractionListResponse(pageOf(ordered, page, size), ordered.size(), page, size,
-                request.sort(), DataStatus.AVAILABLE, catalogChangedAt,
+        return new AttractionListResponse(pageOf(ordered.items(), page, size), ordered.items().size(),
+                page, size, request.sort(), ordered.applied(), DataStatus.AVAILABLE, catalogChangedAt,
                 KorServiceItemConverter.SOURCE);
     }
 
@@ -201,7 +202,7 @@ public class AttractionService {
      * 카탈로그가 비어 있을 때만 쓰는 공급자 경로.
      *
      * <p>활성 언급량 스냅샷이 없으면 정렬 기준 자체가 없다. 그때는 순서를 만들어내지 않고
-     * 공급자 순서를 그대로 쓰며, 각 항목의 상태로 그 사실을 알린다.
+     * 공급자 순서를 그대로 쓰며, 각 항목의 상태와 응답의 {@code sortApplied} 로 알린다(#65).
      */
     private AttractionListResponse searchWholeRangeFromProvider(AttractionSearchRequest request,
                                                                 RegionCode region) {
@@ -217,16 +218,21 @@ public class AttractionService {
         // 신호 조회와 정렬 전에 거른다. 경계 밖 장소의 언급량까지 찾을 이유가 없다.
         List<AttractionSnapshot> withinBounds = filterByBounds(fetched.snapshots(), request.bounds());
 
-        List<AttractionResponse> ordered = orderBySort(toResponses(withinBounds, request), request.sort());
+        Ordered ordered = orderBySort(toResponses(withinBounds, request), request.sort());
 
-        return new AttractionListResponse(pageOf(ordered, page, size), ordered.size(), page, size,
-                request.sort(), fetched.status(), fetched.collectedAt(),
+        return new AttractionListResponse(pageOf(ordered.items(), page, size), ordered.items().size(),
+                page, size, request.sort(), ordered.applied(), fetched.status(), fetched.collectedAt(),
                 KorServiceItemConverter.SOURCE);
     }
 
-    /** 경계만 준 요청은 정렬 기준이 없다. 순서를 만들어내지 않고 들어온 순서를 그대로 둔다. */
-    private List<AttractionResponse> orderBySort(List<AttractionResponse> items, AttractionSort sort) {
-        return sort == null ? items : sortOrder.order(items, sort);
+    /**
+     * 경계만 준 요청은 정렬 기준이 없다. 순서를 만들어내지 않고 들어온 순서를 그대로 둔다.
+     *
+     * <p>정렬을 요청해도 산정된 장소가 하나도 없으면 같은 결론이다. 그 판단은
+     * {@link AttractionSortOrder} 가 하고, 여기서는 그 사실을 응답까지 들고 간다(#65).
+     */
+    private Ordered orderBySort(List<AttractionResponse> items, AttractionSort sort) {
+        return sort == null ? Ordered.notApplied(items) : sortOrder.order(items, sort);
     }
 
     /**

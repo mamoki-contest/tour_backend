@@ -408,6 +408,7 @@ class AttractionServiceTest {
                 sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20));
 
         assertThat(response.sort()).isEqualTo(AttractionSort.ONLINE_MENTION_DESC);
+        assertThat(response.sortApplied()).isTrue();
         assertThat(response.page()).isEqualTo(1);
         assertThat(response.size()).isEqualTo(20);
         assertThat(response.dataStatus()).isEqualTo(DataStatus.AVAILABLE);
@@ -786,12 +787,14 @@ class AttractionServiceTest {
     }
 
     /**
-     * 언급량 스냅샷이 없으면 정렬 기준이 없다. 서비스 주석은 이때 "순서를 만들어내지 않고
-     * 공급자 순서를 그대로 쓴다"고 적고 있지만, 실제로는 정렬 불가 항목을 이름 오름차순으로
-     * 다시 줄 세운다. 별도 이슈(#65)로 올렸고, 여기서는 지금 동작을 못 박아 둔다.
+     * 언급량 스냅샷이 없으면 정렬 기준이 없다. 그때는 순서를 만들어내지 않고 공급자 순서를
+     * 그대로 쓴다(#65).
+     *
+     * <p>예전에는 정렬 불가 항목을 이름 오름차순으로 다시 줄 세웠다. 응답의 {@code sort} 는
+     * 요청한 기준을 그대로 싣고 있어서, 프론트에서는 가나다순 목록이 언급량 순으로 읽혔다.
      */
     @Test
-    @DisplayName("폴백인데 언급량 스냅샷이 없으면 이름 오름차순으로 줄 세운다")
+    @DisplayName("폴백인데 언급량 스냅샷이 없으면 공급자 순서를 그대로 둔다")
     void fallbackKeepsProviderOrderWithoutMentionSnapshot() {
         given(attractionRepository.findLatestCatalogChangeAt()).willReturn(null);
         // 이미 등록해 둔 answer 가 given(...) 안에서 실행되지 않도록 반대 순서로 덮는다.
@@ -805,12 +808,68 @@ class AttractionServiceTest {
         AttractionListResponse response = attractionService.search(
                 sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20));
 
-        // 공급자가 준 순서는 9001, 9002, 9003 이었다.
+        // 공급자가 준 순서 그대로다. 이름순으로 다시 줄 세우지 않는다.
         assertThat(response.items()).extracting(AttractionResponse::name)
-                .containsExactly("경포해변", "속초해변", "주문진해변");
-        // 다만 각 항목의 상태로 "정렬 기준이 없다"는 사실은 전달된다.
+                .containsExactly("속초해변", "경포해변", "주문진해변");
+        // 각 항목의 상태에 더해, 목록 수준에서도 정렬을 적용하지 못했다는 사실을 알린다.
         assertThat(response.items()).allSatisfy(item ->
                 assertThat(item.onlineMention().status()).isEqualTo(MentionStatus.COLLECTION_FAILED));
+        assertThat(response.sortApplied()).isFalse();
+        // 요청한 기준은 그대로 반향한다. 무엇을 요청했는지는 프론트가 알아야 한다.
+        assertThat(response.sort()).isEqualTo(AttractionSort.ONLINE_MENTION_DESC);
+    }
+
+    // --- 정렬을 적용했는지 (#65) --------------------------------------------------
+
+    @Test
+    @DisplayName("카탈로그 정렬도 언급량 스냅샷이 없으면 카탈로그 기본 순서를 그대로 둔다")
+    void catalogKeepsCatalogOrderWithoutMentionSnapshot() {
+        willReturn(Optional.empty()).given(signalLookupService).findOnlineMentions(any());
+        given(signalLookupService.findMentionRuleVersion()).willReturn(Optional.empty());
+        given(attractionRepository.findAllWithRegion()).willReturn(List.of(
+                attraction("9001", "속초해변", GANGNEUNG_LAWD, "12",
+                        new BigDecimal("37.7"), new BigDecimal("128.8")),
+                attraction("9002", "경포해변", GANGNEUNG_LAWD, "12",
+                        new BigDecimal("37.7"), new BigDecimal("128.8"))));
+
+        AttractionListResponse response = attractionService.search(
+                sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20));
+
+        // 카탈로그 기본 순서는 표준 관광지명 오름차순이다. 요청한 정렬과는 무관하다.
+        assertThat(response.items()).extracting(AttractionResponse::name)
+                .containsExactly("경포해변", "속초해변");
+        assertThat(response.sortApplied()).isFalse();
+    }
+
+    @Test
+    @DisplayName("산정된 장소가 하나라도 있으면 정렬을 적용하고 그 사실을 알린다")
+    void sortAppliedWhenAtLeastOnePlaceIsSortable() {
+        mentionStatuses.put(contentId(1), MentionStatus.COLLECTION_FAILED);
+        givenCatalog(catalogOf(2));
+
+        AttractionListResponse response = attractionService.search(
+                sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20));
+
+        assertThat(response.sortApplied()).isTrue();
+        // 산정된 장소가 앞에 서고, 산정되지 않은 장소는 뒤에 붙는다.
+        assertThat(response.items()).extracting(AttractionResponse::contentId)
+                .containsExactly(contentId(2), contentId(1));
+    }
+
+    @Test
+    @DisplayName("정렬을 요청하지 않으면 적용할 정렬도 없다")
+    void sortNotAppliedWhenNotRequested() {
+        given(attractionRepository.findAllWithRegion()).willReturn(List.of(
+                attraction("inside", "경계 안", GANGNEUNG_LAWD, "12",
+                        new BigDecimal("37.7"), new BigDecimal("128.8"))));
+
+        AttractionListResponse response = attractionService.search(new AttractionSearchRequest(
+                null, null, 1, 20, null, null, null,
+                new BigDecimal("37.6"), new BigDecimal("37.9"),
+                new BigDecimal("128.7"), new BigDecimal("129.0")));
+
+        assertThat(response.sort()).isNull();
+        assertThat(response.sortApplied()).isFalse();
     }
 
     // --- 도우미 ---------------------------------------------------------------
