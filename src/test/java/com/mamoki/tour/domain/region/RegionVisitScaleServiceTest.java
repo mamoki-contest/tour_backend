@@ -19,6 +19,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.web.client.RestClient;
 
 import com.mamoki.tour.domain.cache.dto.CachedResponse;
 import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
@@ -54,7 +55,7 @@ class RegionVisitScaleServiceTest {
         given(client.regionVisitorsKey(any(), any(), anyInt()))
                 .willAnswer(invocation -> "locgoRegnVisitrDDList?pageNo=" + invocation.getArgument(2));
         given(client.parse(anyString()))
-                .willAnswer(invocation -> new DataLabClient(properties()).parse(invocation.getArgument(0)));
+                .willAnswer(invocation -> new DataLabClient(properties(), RestClient.builder()).parse(invocation.getArgument(0)));
 
         cacheService = Mockito.mock(ExternalApiCacheService.class);
         stubFirstPage(CachedResponse.available(fixture, LocalDateTime.now()));

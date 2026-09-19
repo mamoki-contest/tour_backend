@@ -17,6 +17,7 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.client.RestClient;
 
 import com.mamoki.tour.global.exception.ExternalApiException;
 import com.mamoki.tour.infra.gnits.dto.GnParkInfoResponse;
@@ -38,7 +39,7 @@ class GnItsContractTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        client = new GnItsClient(properties(Duration.ZERO, 2));
+        client = new GnItsClient(properties(Duration.ZERO, 2), RestClient.builder());
         info = client.parseParkInfo(fixture("gnits-getParkInfo"));
         realtime = client.parseParkRltm(fixture("gnits-getParkRltm"));
     }
@@ -214,7 +215,7 @@ class GnItsContractTest {
     @Test
     @DisplayName("재시도 횟수를 0 으로 두면 한 번만 묻는다")
     void honorsRetryCount() {
-        GnItsClient once = new GnItsClient(properties(Duration.ZERO, 0));
+        GnItsClient once = new GnItsClient(properties(Duration.ZERO, 0), RestClient.builder());
         int[] calls = {0};
 
         assertThatThrownBy(() -> once.fetchWithThrottleRetry("getParkRltm", () -> {
@@ -276,7 +277,7 @@ class GnItsContractTest {
     void refusesWithoutServiceKey() {
         GnItsClient keyless = new GnItsClient(
                 new GnItsProperties("http://example.invalid", " ", 100, 0, Duration.ZERO,
-                        Duration.ofSeconds(1), Duration.ofSeconds(1)));
+                        Duration.ofSeconds(1), Duration.ofSeconds(1)), RestClient.builder());
 
         assertThatThrownBy(keyless::parkRltmJson)
                 .isInstanceOf(ExternalApiException.class)
