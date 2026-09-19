@@ -1,0 +1,6 @@
+# 값이 빈 줄이 실린 .env 를 읽은 상태를 재현하는 테스트 전용 프로파일.
+# 실제 .env 와 같은 경로(spring.config.import 의 properties 형식)로 읽어야
+# 같은 종류의 프로퍼티 소스가 만들어져 검증에 뜻이 생긴다.
+spring:
+  config:
+    import: classpath:fixtures/blank-values.env[.properties]
