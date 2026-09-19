@@ -25,7 +25,14 @@ public enum BatchJob {
     VISITOR_STATS("visitor-stats", "주요관광지점 입장객통계 적재"),
 
     /** 내려받은 전국주차장정보표준데이터 CSV 에서 강원 행을 적재한다. */
-    PARKING_CATALOG("parking-catalog", "전국주차장정보표준데이터 적재");
+    PARKING_CATALOG("parking-catalog", "전국주차장정보표준데이터 적재"),
+
+    /**
+     * 카탈로그에 잇지 못한 원천 이름을 카카오 로컬 API 로 찾아 매핑 표에 남긴다.
+     *
+     * <p>판정만 남기고 조회 응답을 바꾸지 않는다. TMAP·입장객은 다음 적재가 그 표를 읽는다.
+     */
+    PLACE_MAPPING("place-mapping", "카카오 로컬 API 장소 매핑");
 
     private final String jobName;
     private final String description;

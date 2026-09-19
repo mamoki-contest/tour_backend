@@ -168,6 +168,30 @@ tour:
         # 실제 관광지는 안목해변 4.6%, 경포해변 4.2%, 오죽헌 2.0% 였다. 사이가 네 배 벌어져
         # 있어 그 안 어디에 선을 그어도 갈린다.
         ambiguous-ratio: ${NAVER_AMBIGUOUS_RATIO:0.10}
+    kakao:
+      # 카카오 로컬 REST API. 지도 표시가 아니라 공급자 간 장소 매핑(#55)에만 쓴다.
+      base-url: ${KAKAO_LOCAL_BASE_URL:https://dapi.kakao.com}
+      # developers.kakao.com 의 REST API 키. JavaScript 키가 아니며 도메인 등록도 필요 없다.
+      # 비어 있으면 매핑 배치가 첫 호출 전에 이유를 남기고 끝낸다.
+      rest-api-key: ${KAKAO_REST_API_KEY:}
+      connect-timeout: 5s
+      read-timeout: 15s
+      # 로컬 검색 한도는 하루 100,000회다. 이 간격이 한 번의 배치가 한도를 몰아 쓰지 않게 막는다.
+      call-delay: 100ms
+      # 한 번에 받을 장소 수. 카카오 상한이 15 다.
+      size: ${KAKAO_LOCAL_SIZE:15}
+      # 시·군 중심에서 훑을 반경(m). 카카오 상한이 20,000 이다.
+      search-radius: ${KAKAO_LOCAL_RADIUS:20000}
+  place-mapping:
+    # 카카오가 찾은 좌표와 카탈로그 좌표가 이 거리 안이면 같은 장소로 본다(m).
+    #
+    # 스파이크(#4 의 2026-09-18 댓글)에서 확정 매칭의 거리는 중앙값 20m, 90분위 214m,
+    # 최대 416m 였다. 300m 는 그 분포의 대부분을 담으면서 도심에서 옆 건물이 붙지 않는 선이다.
+    # 넓히면 도심에서 다른 장소가 붙고, 좁히면 넓은 지형(계곡·해변)이 통째로 빠진다.
+    boundary-meters: ${PLACE_MAPPING_BOUNDARY:300}
+    # 한 번의 실행에서 낼 수 있는 카카오 호출 수의 상한.
+    # 원천 이름 수가 예상 밖으로 늘어도 하루 한도를 한 번에 소진하지 않게 막는다.
+    max-calls-per-run: ${PLACE_MAPPING_MAX_CALLS:20000}
   cors:
     # Vercel 배포 출처만 허용한다. 쉼표로 구분해 환경변수로 주입한다.
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}

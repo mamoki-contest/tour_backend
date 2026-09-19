@@ -20,6 +20,9 @@ import com.mamoki.tour.domain.attraction.importer.AttractionCatalogImportService
 import com.mamoki.tour.domain.mention.service.OnlineMentionCollectResult;
 import com.mamoki.tour.domain.mention.service.OnlineMentionCollector;
 import com.mamoki.tour.domain.parking.importer.ParkingCatalogImportService;
+import com.mamoki.tour.domain.placemapping.enums.MappingSource;
+import com.mamoki.tour.domain.placemapping.importer.PlaceMappingJobService;
+import com.mamoki.tour.domain.placemapping.importer.PlaceMappingResult;
 import com.mamoki.tour.domain.tmaprank.importer.TmapRankImportService;
 import com.mamoki.tour.domain.visitorstats.importer.VisitorStatsImportService;
 
@@ -36,6 +39,7 @@ class BatchJobRunnerTest {
     private TmapRankImportService tmapRankImportService;
     private VisitorStatsImportService visitorStatsImportService;
     private ParkingCatalogImportService parkingCatalogImportService;
+    private PlaceMappingJobService placeMappingJobService;
     private BatchJobRunner runner;
 
     @BeforeEach
@@ -45,6 +49,10 @@ class BatchJobRunnerTest {
         tmapRankImportService = Mockito.mock(TmapRankImportService.class);
         visitorStatsImportService = Mockito.mock(VisitorStatsImportService.class);
         parkingCatalogImportService = Mockito.mock(ParkingCatalogImportService.class);
+        placeMappingJobService = Mockito.mock(PlaceMappingJobService.class);
+        given(placeMappingJobService.run(any()))
+                .willAnswer(call -> new PlaceMappingResult(
+                        call.getArgument(0), 0, 0, 0, 0, 0, 0, null));
 
         given(catalogImportService.importAll())
                 .willReturn(new AttractionCatalogImportResult(10, 10, 0, 0));
@@ -52,7 +60,8 @@ class BatchJobRunnerTest {
                 .willReturn(Mockito.mock(OnlineMentionCollectResult.class, Mockito.RETURNS_DEEP_STUBS));
 
         runner = new BatchJobRunner(catalogImportService, mentionCollector,
-                tmapRankImportService, visitorStatsImportService, parkingCatalogImportService);
+                tmapRankImportService, visitorStatsImportService, parkingCatalogImportService,
+                placeMappingJobService);
     }
 
     private void run(String... args) {
@@ -61,7 +70,7 @@ class BatchJobRunnerTest {
 
     private void verifyNothingRan() {
         Mockito.verifyNoInteractions(mentionCollector, tmapRankImportService,
-                visitorStatsImportService, parkingCatalogImportService);
+                visitorStatsImportService, parkingCatalogImportService, placeMappingJobService);
         Mockito.verify(catalogImportService, Mockito.never()).importAll();
     }
 
@@ -178,10 +187,54 @@ class BatchJobRunnerTest {
     }
 
     @Test
-    @DisplayName("작업 목록에 다섯 가지가 모두 들어 있다")
+    @DisplayName("장소 매핑 작업은 원천을 주지 않으면 셋을 모두 돈다")
+    void runsPlaceMappingForEverySource() {
+        run("--job=place-mapping");
+
+        for (MappingSource source : MappingSource.values()) {
+            Mockito.verify(placeMappingJobService).run(source);
+        }
+    }
+
+    @Test
+    @DisplayName("장소 매핑 작업은 지정한 원천만 돈다")
+    void runsPlaceMappingForGivenSource() {
+        run("--job=place-mapping", "--source=tmap");
+
+        Mockito.verify(placeMappingJobService).run(MappingSource.TMAP);
+        Mockito.verify(placeMappingJobService, Mockito.never()).run(MappingSource.VISITOR_STATS);
+        Mockito.verify(placeMappingJobService, Mockito.never()).run(MappingSource.RELATED_PLACE);
+    }
+
+    @Test
+    @DisplayName("알 수 없는 원천이면 아무 원천도 돌지 않는다")
+    void rejectsUnknownSource() {
+        run("--job=place-mapping", "--source=드롭테이블");
+
+        Mockito.verifyNoInteractions(placeMappingJobService);
+    }
+
+    @Test
+    @DisplayName("한 원천이 중간에 멈추면 다음 원천으로 넘어가지 않는다")
+    void stopsAfterAnInterruptedSource() {
+        // 인증 실패나 한도 초과는 다음 원천에서도 같은 답을 받는다. 계속 부르면 한도만 깎고,
+        // 무엇이 왜 멈췄는지가 뒤 원천의 로그에 묻힌다.
+        given(placeMappingJobService.run(MappingSource.TMAP))
+                .willReturn(new PlaceMappingResult(MappingSource.TMAP, 10, 0, 3, 1, 1, 1,
+                        "카카오 호출 한도 초과"));
+
+        run("--job=place-mapping");
+
+        Mockito.verify(placeMappingJobService).run(MappingSource.TMAP);
+        Mockito.verify(placeMappingJobService, Mockito.never()).run(MappingSource.VISITOR_STATS);
+    }
+
+    @Test
+    @DisplayName("작업 목록에 여섯 가지가 모두 들어 있다")
     void listsEveryJob() {
-        assertThat(BatchJob.values()).hasSize(5);
+        assertThat(BatchJob.values()).hasSize(6);
         assertThat(BatchJob.names())
-                .contains("catalog", "mention", "tmap", "visitor-stats", "parking-catalog");
+                .contains("catalog", "mention", "tmap", "visitor-stats", "parking-catalog",
+                        "place-mapping");
     }
 }

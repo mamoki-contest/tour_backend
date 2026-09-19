@@ -2,16 +2,17 @@ package com.mamoki.tour.domain.visitorstats.importer;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.mamoki.tour.domain.attraction.entity.Attraction;
-import com.mamoki.tour.domain.attraction.repository.AttractionRepository;
 import com.mamoki.tour.domain.attraction.support.PlaceNameNormalizer;
+import com.mamoki.tour.domain.placemapping.enums.MappingSource;
+import com.mamoki.tour.domain.placemapping.service.PlaceMatchIndex;
+import com.mamoki.tour.domain.placemapping.service.PlaceMatcher;
 import com.mamoki.tour.domain.visitorstats.entity.VisitorStatsEntry;
 import com.mamoki.tour.domain.visitorstats.entity.VisitorStatsSnapshot;
 import com.mamoki.tour.domain.visitorstats.repository.VisitorStatsEntryRepository;
@@ -26,22 +27,29 @@ import com.mamoki.tour.global.enums.VisitorCountStatus;
  *
  * <p>성공 기록과 실패 기록은 트랜잭션을 나눈다. 실패를 같은 트랜잭션에 적으면 롤백될 때
  * 이력까지 사라져 무엇이 왜 실패했는지 남지 않는다.
+ *
+ * <p>카탈로그 매칭은 {@code PlaceMatcher} 에 맡긴다. 시·군명과 관광지명을 함께 써서 잇는데,
+ * 이름만으로 이으면 같은 이름이 여러 시·군에 있을 때 엉뚱한 곳에 값이 붙기 때문이다(#37).
+ * 이름으로 못 찾은 것은 같은 시·군 안에서 매핑 표(#55)의 확정 행으로 이어진다.
+ * 카탈로그가 비어 있으면 매칭은 0건이며, 값은 그대로 남고 조회에만 노출되지 않는다.
  */
 @Service
 public class VisitorStatsSnapshotWriter {
 
+    private static final Logger log = LoggerFactory.getLogger(VisitorStatsSnapshotWriter.class);
+
     private final VisitorStatsSnapshotRepository snapshotRepository;
     private final VisitorStatsEntryRepository entryRepository;
-    private final AttractionRepository attractionRepository;
+    private final PlaceMatcher placeMatcher;
     private final VisitorStatsSnapshotService snapshotService;
 
     public VisitorStatsSnapshotWriter(VisitorStatsSnapshotRepository snapshotRepository,
                                       VisitorStatsEntryRepository entryRepository,
-                                      AttractionRepository attractionRepository,
+                                      PlaceMatcher placeMatcher,
                                       VisitorStatsSnapshotService snapshotService) {
         this.snapshotRepository = snapshotRepository;
         this.entryRepository = entryRepository;
-        this.attractionRepository = attractionRepository;
+        this.placeMatcher = placeMatcher;
         this.snapshotService = snapshotService;
     }
 
@@ -61,13 +69,15 @@ public class VisitorStatsSnapshotWriter {
                 .rowCount(0)
                 .build());
 
-        Map<String, String> catalog = loadCatalog();
+        PlaceMatchIndex matchIndex = placeMatcher.index(MappingSource.VISITOR_STATS);
+
+        log.info("입장객통계 매칭에 쓸 확정 매핑 {}건을 읽었습니다.", matchIndex.mappingCount());
 
         int matched = 0;
 
         for (VisitorStatsRow row : workbook.rows()) {
             String normalized = PlaceNameNormalizer.normalize(row.placeName());
-            String contentId = normalized == null ? null : catalog.get(key(row.regionName(), normalized));
+            String contentId = matchIndex.match(row.regionName(), row.placeName()).orElse(null);
 
             entryRepository.save(VisitorStatsEntry.builder()
                     .snapshot(snapshot)
@@ -108,34 +118,6 @@ public class VisitorStatsSnapshotWriter {
 
         failed.fail(reason);
         return failed;
-    }
-
-    /**
-     * 시·군명과 관광지명을 함께 써서 잇는다.
-     *
-     * <p>이름만으로 이으면 같은 이름이 여러 시·군에 있을 때 엉뚱한 곳에 값이 붙는다.
-     * 공식 파일은 (시·군, 관광지명) 이 유일하므로 이 조합이면 한 곳으로 좁혀진다.
-     *
-     * <p>카탈로그가 비어 있으면 매칭은 0건이다. 값은 그대로 남고 조회에만 노출되지 않는다.
-     */
-    private Map<String, String> loadCatalog() {
-        Map<String, String> byRegionAndName = new HashMap<>();
-
-        for (Attraction attraction : attractionRepository.findAllWithRegion()) {
-            String normalized = PlaceNameNormalizer.normalize(attraction.getName());
-            String region = attraction.getRegionCode() == null
-                    ? null : attraction.getRegionCode().getName();
-
-            if (normalized != null && region != null) {
-                byRegionAndName.putIfAbsent(key(region, normalized), attraction.getContentId());
-            }
-        }
-
-        return byRegionAndName;
-    }
-
-    private static String key(String regionName, String normalizedName) {
-        return regionName.strip() + "|" + normalizedName;
     }
 
     /**
