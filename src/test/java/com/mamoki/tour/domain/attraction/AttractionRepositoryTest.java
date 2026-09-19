@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import org.hibernate.Hibernate;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +31,18 @@ class AttractionRepositoryTest {
 
     @Autowired
     private RegionCodeRepository regionCodeRepository;
+
+    /**
+     * 경계 조회와 시·군 조회는 표가 비어 있다고 보고 결과를 통째로 비교한다.
+     *
+     * <p>앞선 테스트 클래스가 커밋해 둔 카탈로그가 남아 있으면 그 행들이 섞여 들어온다.
+     * 어느 클래스가 먼저 도느냐에 따라 결과가 갈리므로 여기서 먼저 비운다. 이 클래스는
+     * {@code @Transactional} 이라 여기서 지운 것도 테스트가 끝나면 함께 되돌아간다.
+     */
+    @BeforeEach
+    void clearCommittedCatalog() {
+        attractionRepository.deleteAllInBatch();
+    }
 
     @Test
     @DisplayName("지역코드와 함께 관광지를 저장하고 표준 식별자로 조회한다")

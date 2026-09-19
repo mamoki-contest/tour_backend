@@ -4,6 +4,13 @@ spring:
       on-profile: test
   datasource:
     url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${TEST_DB_NAME}?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    hikari:
+      # 스프링 컨텍스트마다 풀이 하나씩 생긴다. 빈을 갈아 끼우는 테스트(@MockitoBean)는
+      # 컨텍스트를 따로 쓰므로 클래스가 늘수록 풀도 늘고, 기본값(10)이면 MySQL 의
+      # max_connections 를 넘겨 "Too many connections" 로 컨텍스트 기동이 통째로 실패한다.
+      # 테스트는 한 줄로 도는 데다 풀을 여럿 열어 둘 이유가 없다.
+      maximum-pool-size: 3
+      minimum-idle: 1
   jpa:
     hibernate:
       # 테스트 시작 시 스키마를 만들고 종료 시 삭제한다.
