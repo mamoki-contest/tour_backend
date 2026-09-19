@@ -45,4 +45,8 @@ USER tour
 EXPOSE 8080
 
 # TZ 환경변수만으로 JVM 이 시간대를 못 잡는 경우가 있어 -Duser.timezone 으로 한 번 더 못박는다.
-ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -Duser.timezone=Asia/Seoul -jar /app/app.jar"]
+#
+# 끝의 "$@" 와 "--" 는 컨테이너에 준 인자를 그대로 넘기기 위한 것이다. 이게 없으면
+# `docker compose run --rm app --job=catalog` 의 인자가 sh 에게만 가고 앱에는 닿지 않아,
+# 적재·수집 작업을 컨테이너로 돌릴 방법이 없다. 인자를 주지 않으면 지금까지와 같다.
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -Duser.timezone=Asia/Seoul -jar /app/app.jar \"$@\"", "--"]
