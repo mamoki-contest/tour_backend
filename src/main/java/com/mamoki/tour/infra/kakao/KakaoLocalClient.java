@@ -6,6 +6,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -38,6 +39,7 @@ public class KakaoLocalClient {
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
 
+    @Autowired
     public KakaoLocalClient(KakaoLocalProperties properties) {
         this(properties, RestClient.builder().requestFactory(requestFactory(properties)));
     }

@@ -1,21 +1,18 @@
 package com.mamoki.tour.domain.relatedplace.service;
 
-import java.time.Duration;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import com.mamoki.tour.domain.attraction.dto.AttractionSnapshot;
-import com.mamoki.tour.domain.attraction.support.PlaceNameNormalizer;
-import com.mamoki.tour.domain.cache.dto.CachedResponse;
-import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
+import com.mamoki.tour.domain.placemapping.enums.MappingSource;
+import com.mamoki.tour.domain.placemapping.service.PlaceMatcher;
+import com.mamoki.tour.domain.relatedplace.dto.RegionRelatedPlaces;
 import com.mamoki.tour.domain.relatedplace.dto.RelatedPlace;
 import com.mamoki.tour.domain.relatedplace.dto.RelatedPlaceRow;
 import com.mamoki.tour.domain.relatedplace.dto.RelatedPlaces;
@@ -26,13 +23,7 @@ import com.mamoki.tour.domain.visittiming.dto.VisitTiming;
 import com.mamoki.tour.domain.visittiming.enums.DateMode;
 import com.mamoki.tour.domain.visittiming.enums.VisitTimingStatus;
 import com.mamoki.tour.domain.visittiming.service.VisitTimingService;
-import com.mamoki.tour.global.enums.ApiProvider;
-import com.mamoki.tour.global.enums.DataStatus;
-import com.mamoki.tour.global.exception.ExternalApiException;
-import com.mamoki.tour.infra.tarrltetar.TarRlteTarClient;
 import com.mamoki.tour.infra.tarrltetar.TarRlteTarItemConverter;
-import com.mamoki.tour.infra.tarrltetar.dto.TarRlteTarItem;
-import com.mamoki.tour.infra.tarrltetar.dto.TarRlteTarResponse;
 
 /**
  * 관광지 상세의 연관 장소를 대체지 후보와 함께 가기 좋은 곳으로 나눈다.
@@ -55,8 +46,6 @@ import com.mamoki.tour.infra.tarrltetar.dto.TarRlteTarResponse;
 @Service
 public class RelatedPlaceService {
 
-    private static final Duration CACHE_TTL = Duration.ofHours(24);
-
     /**
      * 자격을 따질 대체지 후보 수의 상한.
      *
@@ -67,21 +56,19 @@ public class RelatedPlaceService {
      */
     private static final int MAX_ALTERNATIVE_CANDIDATES = 30;
 
-    private static final Logger log = LoggerFactory.getLogger(RelatedPlaceService.class);
-
-    private final TarRlteTarClient tarRlteTarClient;
-    private final ExternalApiCacheService cacheService;
+    private final RelatedPlaceRegionLoader regionLoader;
     private final VisitTimingService visitTimingService;
     private final AlternativeCurationService curationService;
+    private final PlaceMatcher placeMatcher;
 
-    public RelatedPlaceService(TarRlteTarClient tarRlteTarClient,
-                               ExternalApiCacheService cacheService,
+    public RelatedPlaceService(RelatedPlaceRegionLoader regionLoader,
                                VisitTimingService visitTimingService,
-                               AlternativeCurationService curationService) {
-        this.tarRlteTarClient = tarRlteTarClient;
-        this.cacheService = cacheService;
+                               AlternativeCurationService curationService,
+                               PlaceMatcher placeMatcher) {
+        this.regionLoader = regionLoader;
         this.visitTimingService = visitTimingService;
         this.curationService = curationService;
+        this.placeMatcher = placeMatcher;
     }
 
     public RelatedPlaces resolve(AttractionSnapshot attraction) {
@@ -93,22 +80,25 @@ public class RelatedPlaceService {
      * @param today      지원 범위(오늘부터 30일)의 기준일
      */
     public RelatedPlaces resolve(AttractionSnapshot attraction, LocalDate today) {
-        String baseYm = tarRlteTarClient.baseYm();
+        String baseYm = regionLoader.baseYm();
 
         if (!isLawdCode(attraction.lawdCode())) {
             // 시·군을 모르면 조회 키를 만들 수 없다. 다른 시·군으로 넘겨짚지 않는다.
             return RelatedPlaces.noData(baseYm);
         }
 
-        RegionRelated region = fetchRegionRelated(attraction.lawdCode());
+        RegionRelatedPlaces region = regionLoader.load(attraction.lawdCode());
 
         if (region.rows().isEmpty()) {
             return new RelatedPlaces(
                     RelatedPlacesView.noData(baseYm), RelatedPlacesView.noData(baseYm));
         }
 
-        String baseNormalized = PlaceNameNormalizer.normalize(attraction.name());
-        List<RelatedPlaceRow> mine = region.rowsOf(baseNormalized);
+        // 공급자가 이 관광지를 다른 이름으로 적어 둔 경우가 대부분이다(경포해변 vs 경포해수욕장).
+        // 카탈로그 이름이 먼저고, 매핑 표(#55)의 확정 행이 그 뒤를 잇는다.
+        Set<String> aliases = placeMatcher.normalizedAliases(
+                MappingSource.RELATED_PLACE, attraction.contentId(), attraction.name());
+        List<RelatedPlaceRow> mine = region.rowsOfAny(aliases);
 
         if (mine.isEmpty()) {
             // 공급자 응답은 받았지만 이 관광지가 연관 목록에 없다. 빈 목록이 아니라 그 사실을 알린다.
@@ -121,7 +111,7 @@ public class RelatedPlaceService {
         }
 
         return new RelatedPlaces(
-                alternatives(mine, attraction.contentId(), baseNormalized, region, baseYm, today),
+                alternatives(mine, attraction.contentId(), aliases, region, baseYm, today),
                 companions(mine, region, baseYm));
     }
 
@@ -135,12 +125,12 @@ public class RelatedPlaceService {
      * 이 지점까지 오지 않으므로 큐레이션이 되살릴 수 없다.
      */
     private RelatedPlacesView alternatives(List<RelatedPlaceRow> mine, String baseContentId,
-                                           String baseNormalized, RegionRelated region,
+                                           Set<String> baseAliases, RegionRelatedPlaces region,
                                            String baseYm, LocalDate today) {
 
         List<RelatedPlaceRow> candidates = mine.stream()
                 .filter(row -> row.kind() == RelatedPlaceKind.ATTRACTION)
-                .filter(row -> isDifferentPlace(row, baseNormalized))
+                .filter(row -> isDifferentPlace(row, baseAliases))
                 .sorted(Comparator.comparing(RelatedPlaceRow::rank,
                         Comparator.nullsLast(Comparator.naturalOrder())))
                 .limit(MAX_ALTERNATIVE_CANDIDATES)
@@ -172,7 +162,8 @@ public class RelatedPlaceService {
     }
 
     /** 함께 가기 좋은 곳. 음식점·숙박시설이며 대체지 자격을 따지지 않는다. */
-    private RelatedPlacesView companions(List<RelatedPlaceRow> mine, RegionRelated region, String baseYm) {
+    private RelatedPlacesView companions(List<RelatedPlaceRow> mine, RegionRelatedPlaces region,
+                                         String baseYm) {
         List<RelatedPlace> items = mine.stream()
                 .filter(row -> RelatedPlaceClassifier.isCompanion(row.kind()))
                 .sorted(Comparator.comparing(RelatedPlaceRow::rank,
@@ -201,9 +192,13 @@ public class RelatedPlaceService {
      * <p>공급자가 기준 관광지를 자기 연관 목록에 넣어 주는 경우가 있다. 표기가 달라도 정규화하면
      * 같아지므로 정규화한 이름으로 가른다. 이름을 정규화할 수 없는 행은 같은 곳인지 확인할
      * 방법이 없어 후보에서 뺀다.
+     *
+     * <p>기준 관광지를 가리키는 이름이 매핑 표에 더 있으면 그 이름들도 같은 곳으로 본다.
+     * 매핑으로 연관 목록을 찾아 놓고 그 목록 안의 자기 자신은 놓치면, 원래 장소가 자기
+     * 대체지로 올라온다.
      */
-    private static boolean isDifferentPlace(RelatedPlaceRow row, String baseNormalized) {
-        return row.normalizedName() != null && !row.normalizedName().equals(baseNormalized);
+    private static boolean isDifferentPlace(RelatedPlaceRow row, Set<String> baseAliases) {
+        return row.normalizedName() != null && !baseAliases.contains(row.normalizedName());
     }
 
     private static RelatedPlace toRelatedPlace(RelatedPlaceRow row, boolean eligible, VisitTiming timing) {
@@ -236,116 +231,8 @@ public class RelatedPlaceService {
         return row.lawdCode() + ":" + row.normalizedName();
     }
 
-    /**
-     * 시·군 하나의 연관 장소를 모은다.
-     *
-     * <p>한 시·군의 행 수는 (기준 관광지 수 × 연관 장소 수) 라 한 페이지에 담기지 않는다.
-     * 첫 페이지의 totalCount 로 남은 페이지를 이어 받되, 페이지 수에 상한을 둔다.
-     * 상한에서 잘린 관광지는 값을 지어내지 않고 연관 정보 없음으로 남는다.
-     */
-    private RegionRelated fetchRegionRelated(String lawdCode) {
-        List<TarRlteTarItem> items = new ArrayList<>();
-        DataStatus status = null;
-        LocalDateTime collectedAt = null;
-        int totalPages = 1;
-
-        for (int pageNo = 1; pageNo <= totalPages; pageNo++) {
-            CachedResponse cached = fetchPage(lawdCode, pageNo);
-
-            if (!cached.hasBody()) {
-                // 첫 페이지부터 못 받으면 정보 없음, 뒤 페이지가 빠지면 일부만 모인 것이다.
-                status = status == null ? DataStatus.NO_DATA : DataStatus.STALE;
-                log.warn("TarRlteTar 응답을 받지 못했습니다. lawdCode={} pageNo={}", lawdCode, pageNo);
-                break;
-            }
-
-            TarRlteTarResponse parsed;
-            try {
-                parsed = tarRlteTarClient.parse(cached.body());
-            } catch (ExternalApiException e) {
-                // 캐시에 남아 있던 본문이 더 이상 해석되지 않는 경우. 빈 목록으로 위장하지 않는다.
-                log.warn("캐시된 TarRlteTar 응답을 해석하지 못했습니다. lawdCode={} pageNo={}",
-                        lawdCode, pageNo, e);
-                status = status == null ? DataStatus.NO_DATA : DataStatus.STALE;
-                break;
-            }
-
-            items.addAll(parsed.items());
-            status = worse(status, cached.status());
-            collectedAt = earlier(collectedAt, cached.collectedAt());
-
-            if (pageNo == 1) {
-                totalPages = pageCount(parsed.totalCount());
-            }
-        }
-
-        if (status == null || status == DataStatus.NO_DATA || items.isEmpty()) {
-            return RegionRelated.empty();
-        }
-
-        return RegionRelated.of(TarRlteTarItemConverter.convertAll(items), status, collectedAt);
-    }
-
-    private CachedResponse fetchPage(String lawdCode, int pageNo) {
-        return cacheService.fetch(
-                ApiProvider.TAR_RLTE_TAR,
-                tarRlteTarClient.relatedListKey(lawdCode, pageNo),
-                () -> tarRlteTarClient.relatedListJson(lawdCode, pageNo),
-                CACHE_TTL);
-    }
-
-    private int pageCount(int totalCount) {
-        int rowsPerPage = tarRlteTarClient.rowsPerPage();
-        int needed = (totalCount + rowsPerPage - 1) / rowsPerPage;
-
-        return Math.max(1, Math.min(needed, tarRlteTarClient.maxPages()));
-    }
-
-    /** 법정동 시·군 코드는 숫자 5자리다. 형식이 맞아야 시·도 2자리를 잘라 낼 수 있다. */
+    /** 법정동 시·군 코드는 숫자 5자리다. 형식이 맞아야 공급자 조회 키를 만들 수 있다. */
     private static boolean isLawdCode(String value) {
         return value != null && value.length() == 5 && value.chars().allMatch(Character::isDigit);
-    }
-
-    /** 여러 페이지를 합칠 때는 가장 나쁜 상태를 그 시·군의 상태로 삼는다. */
-    private static DataStatus worse(DataStatus current, DataStatus next) {
-        if (current == null) {
-            return next;
-        }
-
-        return current.ordinal() >= next.ordinal() ? current : next;
-    }
-
-    /** 기준 시점은 가장 오래된 페이지에 맞춘다. 실제보다 최신이라고 말하지 않기 위해서다. */
-    private static LocalDateTime earlier(LocalDateTime current, LocalDateTime next) {
-        if (current == null) {
-            return next;
-        }
-
-        return next == null || current.isBefore(next) ? current : next;
-    }
-
-    /** 시·군 하나의 연관 장소와 그 데이터 상태. 기준 관광지명으로 묶어 둔다. */
-    private record RegionRelated(List<RelatedPlaceRow> rows, DataStatus dataStatus,
-                                 LocalDateTime collectedAt) {
-
-        private static RegionRelated empty() {
-            return new RegionRelated(List.of(), DataStatus.NO_DATA, null);
-        }
-
-        private static RegionRelated of(List<RelatedPlaceRow> rows, DataStatus dataStatus,
-                                        LocalDateTime collectedAt) {
-
-            return new RegionRelated(rows, dataStatus, collectedAt);
-        }
-
-        private List<RelatedPlaceRow> rowsOf(String baseNormalizedName) {
-            if (baseNormalizedName == null) {
-                return List.of();
-            }
-
-            return rows.stream()
-                    .filter(row -> baseNormalizedName.equals(row.baseNormalizedName()))
-                    .toList();
-        }
     }
 }
