@@ -202,9 +202,9 @@ public class ThemeResolver {
     /**
      * 시드를 읽어 메모리에 올릴 목록을 만든다.
      *
-     * <p>모르는 코드, 동의어 없는 테마, 자격 토큰 없는 테마는 조용히 넘기지 않고 기록에
-     * 남긴다. 셋 다 시드를 고치다 생기는 실수이고, 증상은 "검색이 그냥 안 걸린다" 라서
-     * 기록이 없으면 몇 주 뒤에야 드러난다.
+     * <p>모르는 코드, 공급자 검색어 없는 테마, 동의어 없는 테마, 자격 토큰 없는 테마는
+     * 조용히 넘기지 않고 기록에 남긴다. 모두 시드를 고치다 생기는 실수이고, 증상은
+     * "검색이 그냥 안 걸린다" 라서 기록이 없으면 몇 주 뒤에야 드러난다.
      */
     private List<ThemeEntry> read() {
         // 적재 순서를 고정한다. 같은 시드에서 늘 같은 목록이 나와야 동의어 충돌 판정도
@@ -226,6 +226,15 @@ public class ThemeResolver {
                 continue;
             }
 
+            List<String> keywords = split(definition.getSearchKeywords());
+
+            if (keywords.isEmpty()) {
+                // 공급자에게 보낼 말이 없으면 조회 자체를 못 한다. 그대로 두면 "부를 것이
+                // 없었다" 가 "공급자가 답하지 않았다"(NO_DATA) 로 보고된다. 목록에서 뺀다.
+                log.warn("공급자 검색어가 없어 지원 테마로 쓸 수 없습니다. code={}", definition.getCode());
+                continue;
+            }
+
             List<String> aliases = aliasesOf(
                     synonymsByCode.getOrDefault(definition.getCode(), List.of()),
                     code.get(), claimedAliases);
@@ -241,7 +250,7 @@ public class ThemeResolver {
             }
 
             loaded.add(new ThemeEntry(code.get(), definition.getDisplayName(), aliases,
-                    split(definition.getSearchKeywords()), matchTokens));
+                    keywords, matchTokens));
         }
 
         return List.copyOf(loaded);
