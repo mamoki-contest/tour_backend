@@ -15,6 +15,7 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.client.RestClient;
 
 import com.mamoki.tour.domain.region.dto.RegionVisitors;
 import com.mamoki.tour.global.exception.ExternalApiException;
@@ -33,7 +34,7 @@ class DataLabContractTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        DataLabClient client = new DataLabClient(properties());
+        DataLabClient client = new DataLabClient(properties(), RestClient.builder());
 
         String body;
         try (InputStream in = getClass().getResourceAsStream(
@@ -99,7 +100,7 @@ class DataLabContractTest {
     @Test
     @DisplayName("오류 응답은 예외로 바꾼다. 빈 목록으로 위장하지 않는다")
     void rejectsErrorResponse() {
-        DataLabClient client = new DataLabClient(properties());
+        DataLabClient client = new DataLabClient(properties(), RestClient.builder());
 
         assertThatThrownBy(() -> client.parse(
                 "{\"response\":{\"header\":{\"resultCode\":\"10\",\"resultMsg\":\"INVALID\"}}}"))

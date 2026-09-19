@@ -16,6 +16,7 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.client.RestClient;
 
 import com.mamoki.tour.domain.visittiming.dto.AttractionForecast;
 import com.mamoki.tour.domain.visittiming.dto.DailyConcentration;
@@ -45,7 +46,7 @@ class TatsCnctrRateContractTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        client = new TatsCnctrRateClient(properties());
+        client = new TatsCnctrRateClient(properties(), RestClient.builder());
 
         String body;
         try (InputStream in = getClass().getResourceAsStream(

@@ -19,6 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.web.client.RestClient;
 
 import com.mamoki.tour.domain.attraction.entity.Attraction;
 import com.mamoki.tour.domain.attraction.importer.AttractionCatalogImportResult;
@@ -61,7 +62,7 @@ class AttractionCatalogImportServiceTest {
         given(korServiceClient.areaBasedListByLawdJson(anyString(), any(), any(), anyInt(), anyInt()))
                 .willAnswer(invocation -> (int) invocation.getArgument(3) == 1 ? fixture : empty());
         given(korServiceClient.parse(anyString(), anyString()))
-                .willAnswer(invocation -> new KorServiceClient(properties())
+                .willAnswer(invocation -> new KorServiceClient(properties(), RestClient.builder())
                         .parse(invocation.getArgument(0), invocation.getArgument(1)));
     }
 

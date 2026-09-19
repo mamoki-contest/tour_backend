@@ -8,8 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import org.springframework.http.client.ClientHttpRequestFactory;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -38,13 +37,13 @@ public class DataLabClient {
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
 
-    public DataLabClient(DataLabProperties properties) {
+    public DataLabClient(
+            DataLabProperties properties,
+            @Qualifier("dataLabRestClientBuilder") RestClient.Builder restClientBuilder) {
         this.properties = properties;
         this.objectMapper = new ObjectMapper()
                 .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
-        this.restClient = RestClient.builder()
-                .requestFactory(requestFactory(properties))
-                .build();
+        this.restClient = restClientBuilder.build();
     }
 
     public String regionVisitorsJson(LocalDate startDate, LocalDate endDate, int pageNo) {
@@ -115,13 +114,5 @@ public class DataLabClient {
         }
 
         return body;
-    }
-
-    private static ClientHttpRequestFactory requestFactory(DataLabProperties properties) {
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(properties.connectTimeout());
-        factory.setReadTimeout(properties.readTimeout());
-
-        return factory;
     }
 }
