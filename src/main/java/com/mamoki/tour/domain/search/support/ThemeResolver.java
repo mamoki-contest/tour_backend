@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
@@ -62,6 +63,8 @@ public class ThemeResolver {
     /** 적재된 테마. 통째로 갈아 끼우므로 읽는 쪽은 잠금 없이 본다. */
     private volatile List<ThemeEntry> themes = List.of();
 
+    /** 생성자가 둘이라 어느 쪽으로 주입할지 표시한다. */
+    @Autowired
     public ThemeResolver(ThemeDefinitionRepository definitionRepository,
                          ThemeSynonymRepository synonymRepository) {
 
