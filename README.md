@@ -85,6 +85,11 @@ cp .env.example .env
 ./gradlew test
 ```
 
+관통 테스트(`AttractionListThroughTest`, `AttractionListMockServerThroughTest`)는
+스프링 컨텍스트를 따로 만드는 만큼 스키마도 따로 씁니다. `TEST_DB_NAME` 에
+`_through`·`_through_mock` 을 붙인 스키마를 테스트가 알아서 만들므로(생성 권한 필요)
+미리 만들어 둘 필요는 없습니다.
+
 ## 적재·수집 작업
 
 카탈로그·언급량·TMAP·입장객·주차장 적재와 장소 매핑은 커맨드라인으로 실행합니다.
