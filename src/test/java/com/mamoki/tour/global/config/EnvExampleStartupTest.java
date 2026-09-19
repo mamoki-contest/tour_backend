@@ -99,6 +99,7 @@ class EnvExampleStartupTest {
         ConfigEnvironments.addValues(environment, "env-file", values);
 
         new BlankValueEnvironmentPostProcessor().postProcessEnvironment(environment, null);
+        new RequiredEnvironmentVariablesPostProcessor().postProcessEnvironment(environment, null);
 
         return environment;
     }
