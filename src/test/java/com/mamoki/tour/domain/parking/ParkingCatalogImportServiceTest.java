@@ -31,7 +31,7 @@ import com.mamoki.tour.global.enums.SnapshotStatus;
 /**
  * 실제 공식 파일로 적재 수명주기를 확인한다.
  *
- * <p>표본은 {@code sample/} 에 둔 2026-09-19 자 전국 파일이다. 전국 18,882행 중 강원
+ * <p>표본은 {@code sample/} 에 둔 2026-09-19 자 전국 파일이다. 전국 18,883행 중 강원
  * 1,398행만 들어와야 한다.
  */
 @SpringBootTest
@@ -159,6 +159,38 @@ class ParkingCatalogImportServiceTest {
         assertThat(snapshotRepository.findByStatus(SnapshotStatus.ACTIVE)).isEmpty();
         assertThat(snapshotRepository.findAll()).extracting(ParkingLotSnapshot::getStatus)
                 .containsOnly(SnapshotStatus.FAILED);
+    }
+
+    /**
+     * 파일이 없으면 적재를 시작한 적도 없다. 그것까지 FAILED 이력으로 남기면 경로를 잘못 친
+     * 실행이 쌓여, 정작 봐야 할 진짜 적재 실패가 그 사이에 묻힌다.
+     */
+    @Test
+    @DisplayName("없는 파일로는 실패 이력조차 남기지 않는다")
+    void leavesNoTraceWhenFileIsMissing(@TempDir Path tempDir) {
+        Path missing = tempDir.resolve("없는파일.csv");
+
+        assertThatThrownBy(() -> importService.importFrom(missing, DOWNLOADED_ON))
+                .isInstanceOf(ParkingCatalogImportException.class);
+
+        assertThat(snapshotRepository.findAll()).isEmpty();
+        assertThat(lotRepository.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("없는 파일을 받아도 직전 스냅샷은 그대로 활성으로 남는다")
+    void keepsPreviousSnapshotWhenFileIsMissing(@TempDir Path tempDir) {
+        ParkingCatalogImportResult first = importService.importFrom(sampleFile(), DOWNLOADED_ON);
+
+        assertThatThrownBy(() ->
+                importService.importFrom(tempDir.resolve("없는파일.csv"), DOWNLOADED_ON.plusDays(1)))
+                .isInstanceOf(ParkingCatalogImportException.class);
+
+        assertThat(snapshotRepository.findAll()).hasSize(1);
+        assertThat(snapshotRepository.findByStatus(SnapshotStatus.ACTIVE))
+                .get()
+                .extracting(ParkingLotSnapshot::getId)
+                .isEqualTo(first.snapshot().getId());
     }
 
     @Test

@@ -50,9 +50,46 @@ class ParkingOccupancyStreakTest {
     void detectsStuckAtFull() {
         ParkingOccupancyStreak streak = streak();
         streak.observe(170, 170, T0);
+        streak.observe(170, 170, T0.plusMinutes(12));
         streak.observe(170, 170, T0.plusMinutes(25));
 
         assertThat(streak.isStuck(THRESHOLD)).isTrue();
+    }
+
+    /**
+     * 이 장부는 사용자가 상세를 열 때만 갱신된다. 조회가 드문 새벽에는 관측 두 번 사이에
+     * 20분이 지날 수 있다. 그것만으로 정말 텅 빈 주차장을 정보 없음으로 내리면, 맞는
+     * 정보를 지켜 주려던 사용자에게서 빼앗게 된다.
+     */
+    @Test
+    @DisplayName("시간을 넘겼어도 관측이 두 번뿐이면 아직 고착이 아니다")
+    void requiresMinimumObservations() {
+        ParkingOccupancyStreak streak = streak();
+        streak.observe(0, 48, T0);
+        streak.observe(0, 48, T0.plusHours(3));
+
+        assertThat(streak.getObservationCount()).isEqualTo(2);
+        assertThat(streak.isStuck(THRESHOLD)).isFalse();
+
+        // 세 번째 관측에서 비로소 판정한다.
+        streak.observe(0, 48, T0.plusHours(3).plusMinutes(5));
+
+        assertThat(streak.isStuck(THRESHOLD)).isTrue();
+    }
+
+    @Test
+    @DisplayName("값이 바뀌면 관측 횟수도 1 로 되감는다")
+    void resetsObservationCountWhenValueChanges() {
+        ParkingOccupancyStreak streak = streak();
+        streak.observe(0, 48, T0);
+        streak.observe(0, 48, T0.plusMinutes(10));
+        streak.observe(0, 48, T0.plusMinutes(20));
+
+        assertThat(streak.getObservationCount()).isEqualTo(3);
+
+        streak.observe(5, 48, T0.plusMinutes(30));
+
+        assertThat(streak.getObservationCount()).isEqualTo(1);
     }
 
     @Test
@@ -101,14 +138,16 @@ class ParkingOccupancyStreakTest {
     }
 
     @Test
-    @DisplayName("같은 관측 시각을 다시 넣어도 연속 시간이 늘지 않는다")
+    @DisplayName("같은 관측 시각을 다시 넣어도 연속 시간과 관측 횟수가 늘지 않는다")
     void ignoresRepeatedObservationTime() {
         ParkingOccupancyStreak streak = streak();
         streak.observe(0, 48, T0);
+        streak.observe(0, 48, T0.plusMinutes(12));
         streak.observe(0, 48, T0.plusMinutes(25));
 
         assertThat(streak.isStuck(THRESHOLD)).isTrue();
         assertThat(streak.getLastObservedAt()).isEqualTo(T0.plusMinutes(25));
+        assertThat(streak.getObservationCount()).isEqualTo(3);
 
         // 캐시가 적중해 같은 시각이 다시 들어온 경우. 마지막 관측 시각이 밀리면 안 된다.
         streak.observe(0, 48, T0.plusMinutes(25));
@@ -116,6 +155,7 @@ class ParkingOccupancyStreakTest {
 
         assertThat(streak.getLastObservedAt()).isEqualTo(T0.plusMinutes(25));
         assertThat(streak.getStreakSince()).isEqualTo(T0);
+        assertThat(streak.getObservationCount()).isEqualTo(3);
     }
 
     @Test

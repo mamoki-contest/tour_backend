@@ -24,11 +24,15 @@ import com.mamoki.tour.infra.gnits.dto.RealtimeParkingLot;
  * 98 → 0 → 98 로 튀었다. 경계값(0 또는 전체)은 실제 상태일 수도 센서 고장일 수도 있는데,
  * 그대로 내보내면 텅 빈 주차장과 죽은 센서를 사용자가 구분할 방법이 없다.
  *
- * <p>그래서 경계값이 {@link #STUCK_THRESHOLD} 이상 한 번도 변하지 않으면 그 주차장만
+ * <p>그래서 경계값이 {@link #STUCK_THRESHOLD} 이상 한 번도 변하지 않고 그 사이
+ * {@link ParkingOccupancyStreak#MIN_OBSERVATIONS} 번 이상 관측했으면 그 주차장만
  * 실시간에서 빼고 {@code STATIC_ONLY} 로 내린다. 값을 고치지 않고 쓰지 않을 뿐이다.
  *
  * <p>판정 기준은 캐시 갱신 시각이다. 캐시가 적중한 요청은 새 관측이 아니므로 연속 시간을
  * 늘리지 않는다.
+ *
+ * <p>장부는 <b>반경 안에 든 주차장만</b> 받는다. 호출자가 반경으로 먼저 거른 뒤에 부르므로,
+ * 반경 안에 주차장이 없는 관광지를 여는 동안에는 이 쓰기 트랜잭션이 아예 열리지 않는다.
  */
 @Service
 public class ParkingSensorGuard {

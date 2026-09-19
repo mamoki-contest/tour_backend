@@ -26,7 +26,7 @@ import com.mamoki.tour.domain.parking.importer.ParkingCatalogRow;
 /**
  * 전국주차장정보표준데이터 판독기. {@code sample/} 의 실제 공식 파일로 검증한다.
  *
- * <p>파일은 CP949 이고 전국 18,882행이 한 덩어리로 온다. 우리가 쓰는 것은 제공기관명이
+ * <p>파일은 CP949 이고 전국 18,883행이 한 덩어리로 온다. 우리가 쓰는 것은 제공기관명이
  * {@code 강원특별자치도 } 로 시작하는 1,398행뿐이다.
  */
 class ParkingCatalogCsvParserTest {

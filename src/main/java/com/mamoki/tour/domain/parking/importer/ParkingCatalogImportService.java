@@ -39,6 +39,13 @@ public class ParkingCatalogImportService {
         String sourceName = file.getFileName() == null
                 ? file.toString() : file.getFileName().toString();
 
+        // 파일이 없으면 적재를 시작한 적도 없다. 이것까지 FAILED 스냅샷으로 남기면 경로를
+        // 잘못 친 실행이 이력에 쌓여, 정작 봐야 할 진짜 적재 실패가 그 사이에 묻힌다.
+        // 스냅샷 행을 만드는 것은 읽을 파일이 있다고 확인한 뒤다.
+        if (!Files.isRegularFile(file)) {
+            throw new ParkingCatalogImportException("파일이 아닙니다: " + file);
+        }
+
         try {
             List<ParkingCatalogRow> rows = read(file, sourceName);
 
@@ -57,11 +64,8 @@ public class ParkingCatalogImportService {
         }
     }
 
+    /** 파일이 있다는 것은 {@link #importFrom} 이 이미 확인했다. */
     private List<ParkingCatalogRow> read(Path file, String sourceName) {
-        if (!Files.isRegularFile(file)) {
-            throw new ParkingCatalogImportException("파일이 아닙니다: " + file);
-        }
-
         try (InputStream in = Files.newInputStream(file)) {
             return ParkingCatalogCsvParser.parse(in, sourceName);
         } catch (IOException e) {

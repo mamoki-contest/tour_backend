@@ -22,12 +22,18 @@ import lombok.NoArgsConstructor;
  * 주차장" 이 응답에서 구분되지 않는다. 0 을 그대로 내보내면 만차인 곳으로 사람을 보내게
  * 된다.
  *
- * <p>그래서 경계값(0 또는 전체)이 정해진 시간 이상 한 번도 변하지 않으면 그 주차장의
- * 실시간 값을 쓰지 않는다. 값을 고치지 않고 <b>쓰지 않을 뿐</b>이다. 경계값이 아닌 값은
- * 아무리 오래 그대로여도 고착으로 보지 않는다. 한산한 주차장은 실제로 변하지 않는다.
+ * <p>그래서 경계값(0 또는 전체)이 정해진 시간 이상 한 번도 변하지 않고, 그 사이 실제로
+ * {@link #MIN_OBSERVATIONS} 번 이상 관측했으면 그 주차장의 실시간 값을 쓰지 않는다. 값을
+ * 고치지 않고 <b>쓰지 않을 뿐</b>이다. 경계값이 아닌 값은 아무리 오래 그대로여도 고착으로
+ * 보지 않는다. 한산한 주차장은 실제로 변하지 않는다.
+ *
+ * <p><b>시간만으로는 판정하지 않는다.</b> 이 장부는 사용자가 상세를 열 때만 갱신되므로,
+ * 조회가 드문 새벽에는 관측이 두 번뿐인데 그 사이에 20분이 지날 수 있다. 정말로 텅 빈
+ * 주차장이 단 두 번 관측으로 정보 없음이 되면, 지켜 주려던 사용자에게서 맞는 정보를
+ * 빼앗는 셈이다.
  *
  * <p>관측 시각은 캐시가 공급자를 실제로 부른 시각이다. 같은 시각을 다시 넣으면 아무 일도
- * 일어나지 않아, 캐시 적중이 반복돼도 연속 시간이 부풀지 않는다.
+ * 일어나지 않아, 캐시 적중이 반복돼도 연속 시간이나 관측 횟수가 부풀지 않는다.
  */
 @Entity
 @Getter
@@ -38,6 +44,14 @@ import lombok.NoArgsConstructor;
                 name = "uk_parking_occupancy_streak_prk_id", columnNames = "prk_id")
 )
 public class ParkingOccupancyStreak extends BaseEntity {
+
+    /**
+     * 고착으로 보려면 지금 값을 최소 이만큼은 관측했어야 한다.
+     *
+     * <p>실시간 캐시가 5분이라 세 번이면 최소 10분이 걸린다. 시간 기준(20분)과 함께
+     * 걸리므로, 20분을 넘겼어도 관측이 두 번뿐이면 아직 판정하지 않는다.
+     */
+    public static final int MIN_OBSERVATIONS = 3;
 
     /** 강릉시 교통정보 조회서비스의 주차장 식별자. */
     @Column(name = "prk_id", nullable = false, length = 40)
@@ -58,14 +72,20 @@ public class ParkingOccupancyStreak extends BaseEntity {
     @Column(name = "last_observed_at")
     private LocalDateTime lastObservedAt;
 
+    /** 지금 값을 연속으로 몇 번 봤는지. 값이 바뀌면 1 로 되감는다. */
+    @Column(name = "observation_count", nullable = false)
+    private int observationCount;
+
     @Builder
     private ParkingOccupancyStreak(String prkId, Integer lastOccupiedLots, Integer lastTotalLots,
-                                   LocalDateTime streakSince, LocalDateTime lastObservedAt) {
+                                   LocalDateTime streakSince, LocalDateTime lastObservedAt,
+                                   int observationCount) {
         this.prkId = prkId;
         this.lastOccupiedLots = lastOccupiedLots;
         this.lastTotalLots = lastTotalLots;
         this.streakSince = streakSince;
         this.lastObservedAt = lastObservedAt;
+        this.observationCount = observationCount;
     }
 
     public static ParkingOccupancyStreak startFor(String prkId) {
@@ -95,6 +115,9 @@ public class ParkingOccupancyStreak extends BaseEntity {
 
         if (changed) {
             this.streakSince = observedAt;
+            this.observationCount = 1;
+        } else {
+            this.observationCount++;
         }
 
         this.lastOccupiedLots = occupiedLots;
@@ -103,9 +126,9 @@ public class ParkingOccupancyStreak extends BaseEntity {
     }
 
     /**
-     * 고착 판정.
+     * 고착 판정. 시간과 관측 횟수를 <b>둘 다</b> 채워야 한다.
      *
-     * @param threshold 경계값이 이 시간 이상 변하지 않으면 고착으로 본다
+     * @param threshold 경계값이 이 시간 이상 변하지 않으면 고착 후보로 본다
      * @return 이 주차장의 실시간 값을 쓰면 안 되는지
      */
     public boolean isStuck(Duration threshold) {
@@ -114,6 +137,12 @@ public class ParkingOccupancyStreak extends BaseEntity {
         }
 
         if (!atBoundary()) {
+            return false;
+        }
+
+        // 조회가 드문 시간대에는 관측 두 번 사이에 20분이 지날 수 있다. 그것만으로 정말 텅 빈
+        // 주차장을 정보 없음으로 내리면, 맞는 정보를 사용자에게서 빼앗게 된다.
+        if (observationCount < MIN_OBSERVATIONS) {
             return false;
         }
 

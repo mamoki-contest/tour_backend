@@ -58,8 +58,8 @@ public class ParkingAccessService {
      *
      * <p>도로 소통({@code ITS_HALF_SPAN} 약 555m)보다 넓다. 도로는 관광지 앞을 지나는 길을
      * 찾는 일이라 좁아야 하지만, 주차장은 세워 두고 걸어갈 수 있으면 된다. 실측에서
-     * 경포해수욕장의 가장 가까운 실시간 주차장이 약 960m 였다. 여기서 더 좁히면 경포 일대가
-     * 통째로 STATIC_ONLY 가 되고, 더 넓히면 걸어갈 수 없는 주차장이 섞인다.
+     * 경포해수욕장의 가장 가까운 실시간 주차장(강문제2공영주차장)이 955m 였다. 여기서 더
+     * 좁히면 경포 일대가 통째로 STATIC_ONLY 가 되고, 더 넓히면 걸어갈 수 없는 주차장이 섞인다.
      */
     public static final int RADIUS_METERS = 1_000;
 
@@ -129,14 +129,18 @@ public class ParkingAccessService {
                     : ParkingView.noData();
         }
 
+        // 상태 판정은 잘라내기 전 전체 목록으로 한다. 잘림 때문에 AVAILABLE 이 STATIC_ONLY 로
+        // 내려가면 안 된다. 반면 출처는 실제로 내려보내는 목록에서 뽑는다. 목록에 없는
+        // 공급자를 출처로 적으면 사용자가 화면에서 확인할 수 없는 이름을 보게 된다.
         boolean anyRealtime = all.stream().anyMatch(ParkingLotView::hasRealtime);
+        List<ParkingLotView> shown = all.stream().limit(MAX_LOTS).toList();
 
         return new ParkingView(
                 anyRealtime ? ParkingStatus.AVAILABLE : ParkingStatus.STATIC_ONLY,
                 realtime.dataStatus(),
-                all.stream().limit(MAX_LOTS).toList(),
+                shown,
                 anyRealtime ? realtime.observedAt() : null,
-                sourcesOf(all));
+                sourcesOf(shown));
     }
 
     /**
@@ -178,23 +182,42 @@ public class ParkingAccessService {
         }
     }
 
-    /** 고착된 센서는 여기서 걸러 실시간에서 내린다. 값을 고치지 않고 쓰지 않을 뿐이다. */
+    /**
+     * 고착된 센서는 여기서 걸러 실시간에서 내린다. 값을 고치지 않고 쓰지 않을 뿐이다.
+     *
+     * <p><b>반경 안 주차장을 먼저 추린 뒤에 고착 장부를 갱신한다.</b> 장부 갱신은 쓰기
+     * 트랜잭션이라, 순서를 뒤집으면 반경 안에 주차장이 하나도 없는 관광지(강원 대부분이다)를
+     * 열 때마다 쓸 일이 없는 쓰기 트랜잭션이 열린다. 조회가 쓰기를 부르는 자리는 꼭 필요한
+     * 만큼만 있어야 한다.
+     */
     private List<ParkingLotView> nearbyRealtime(Realtime realtime,
                                                 BigDecimal latitude, BigDecimal longitude) {
         if (realtime.lots().isEmpty()) {
             return List.of();
         }
 
-        Set<String> stuck = sensorGuard.stuckLotIds(realtime.lots(), realtime.observedAt());
-        List<ParkingLotView> views = new ArrayList<>();
+        List<Nearby> nearby = new ArrayList<>();
 
         for (RealtimeParkingLot lot : realtime.lots()) {
             Double distance = Coordinates.distanceMeters(
                     latitude, longitude, lot.latitude(), lot.longitude());
 
-            if (distance == null || distance > RADIUS_METERS) {
-                continue;
+            if (distance != null && distance <= RADIUS_METERS) {
+                nearby.add(new Nearby(lot, distance));
             }
+        }
+
+        if (nearby.isEmpty()) {
+            return List.of();
+        }
+
+        Set<String> stuck = sensorGuard.stuckLotIds(
+                nearby.stream().map(Nearby::lot).toList(), realtime.observedAt());
+        List<ParkingLotView> views = new ArrayList<>();
+
+        for (Nearby entry : nearby) {
+            RealtimeParkingLot lot = entry.lot();
+            double distance = entry.distanceMeters();
 
             boolean usable = lot.hasRealtime() && !stuck.contains(lot.prkId());
             Integer available = usable ? lot.availableLots() : null;
@@ -365,5 +388,9 @@ public class ParkingAccessService {
         static Realtime unreachable() {
             return new Realtime(false, List.of(), DataStatus.NO_DATA, null);
         }
+    }
+
+    /** 반경 안에 든 실시간 주차장 하나와 그 거리. 거리를 두 번 재지 않으려고 들고 다닌다. */
+    private record Nearby(RealtimeParkingLot lot, double distanceMeters) {
     }
 }

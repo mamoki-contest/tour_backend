@@ -57,14 +57,30 @@ class ParkingSensorGuardTest {
     }
 
     @Test
-    @DisplayName("경계값이 기준 시간 이상 그대로면 다음 요청에서 고착으로 걸린다")
+    @DisplayName("경계값이 기준 시간 이상 그대로면 세 번째 요청에서 고착으로 걸린다")
     void detectsStuckAcrossRequests() {
         sensorGuard.stuckLotIds(List.of(lot("PLOT000001", 48, 0)), T0);
+        sensorGuard.stuckLotIds(List.of(lot("PLOT000001", 48, 0)), T0.plusMinutes(10));
 
         Set<String> stuck = sensorGuard.stuckLotIds(List.of(lot("PLOT000001", 48, 0)),
                 T0.plus(ParkingSensorGuard.STUCK_THRESHOLD));
 
         assertThat(stuck).containsExactly("PLOT000001");
+    }
+
+    /**
+     * 장부는 사용자가 상세를 열 때만 갱신된다. 조회가 드문 새벽에는 관측 두 번 사이에
+     * 기준 시간이 지날 수 있고, 그것만으로 정말 텅 빈 주차장을 내리면 안 된다.
+     */
+    @Test
+    @DisplayName("기준 시간을 넘겼어도 관측이 두 번뿐이면 아직 고착이 아니다")
+    void needsThreeObservationsEvenAfterThreshold() {
+        sensorGuard.stuckLotIds(List.of(lot("PLOT000001", 48, 0)), T0);
+
+        Set<String> stuck = sensorGuard.stuckLotIds(List.of(lot("PLOT000001", 48, 0)),
+                T0.plusHours(3));
+
+        assertThat(stuck).isEmpty();
     }
 
     @Test
@@ -98,6 +114,7 @@ class ParkingSensorGuardTest {
                 lot("PLOT000002", 91, 37));
 
         sensorGuard.stuckLotIds(lots, T0);
+        sensorGuard.stuckLotIds(lots, T0.plusMinutes(15));
         Set<String> stuck = sensorGuard.stuckLotIds(lots, T0.plusMinutes(30));
 
         assertThat(stuck).containsExactlyInAnyOrder("PLOT000001", "PLOT000006");

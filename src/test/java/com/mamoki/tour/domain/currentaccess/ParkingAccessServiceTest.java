@@ -19,8 +19,10 @@ import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
+import com.mamoki.tour.domain.attraction.support.Coordinates;
 import com.mamoki.tour.domain.cache.dto.CachedResponse;
 import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
 import com.mamoki.tour.domain.currentaccess.dto.ParkingLotView;
@@ -36,6 +38,7 @@ import com.mamoki.tour.domain.parking.service.ParkingLotSnapshotService;
 import com.mamoki.tour.global.enums.DataStatus;
 import com.mamoki.tour.infra.gnits.GnItsClient;
 import com.mamoki.tour.infra.gnits.GnItsProperties;
+import com.mamoki.tour.infra.gnits.dto.RealtimeParkingLot;
 
 /**
  * 관광지 주변 주차 여건. 저장한 실제 강릉시 응답으로 검증한다.
@@ -45,7 +48,7 @@ import com.mamoki.tour.infra.gnits.GnItsProperties;
  */
 class ParkingAccessServiceTest {
 
-    /** 강릉중앙시장. 반경 1km 안에 실시간 주차장이 다섯 곳 있다. */
+    /** 강릉중앙시장. 반경 1km 안에 실시간 주차장이 여섯 곳(공급자 13곳 중) 있다. */
     private static final BigDecimal MARKET_LATITUDE = new BigDecimal("37.7528");
     private static final BigDecimal MARKET_LONGITUDE = new BigDecimal("128.8967");
 
@@ -388,6 +391,37 @@ class ParkingAccessServiceTest {
         marketView();
 
         Mockito.verify(sensorGuard).stuckLotIds(anyList(), eq(collectedAt));
+    }
+
+    /**
+     * 고착 장부 갱신은 쓰기 트랜잭션이다. 반경 안에 실시간 주차장이 하나도 없는 관광지가
+     * 강원 대부분인데, 그것들을 열 때마다 쓸 일이 없는 쓰기가 열리면 안 된다.
+     */
+    @Test
+    @DisplayName("반경 안에 실시간 주차장이 없으면 고착 장부를 아예 건드리지 않는다")
+    void skipsStuckLedgerWhenNothingInRadius() {
+        givenCatalog(catalogLot("속초해변 공영주차장", "38.2075", "128.5925", 120));
+
+        ParkingView view = service.resolve(SOKCHO_LATITUDE, SOKCHO_LONGITUDE);
+
+        assertThat(view.status()).isEqualTo(ParkingStatus.STATIC_ONLY);
+        Mockito.verifyNoInteractions(sensorGuard);
+    }
+
+    @Test
+    @DisplayName("고착 장부에는 반경 안 주차장만 넘긴다")
+    void feedsGuardOnlyWithLotsInRadius() {
+        marketView();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<RealtimeParkingLot>> captor = ArgumentCaptor.forClass(List.class);
+        Mockito.verify(sensorGuard).stuckLotIds(captor.capture(), any());
+
+        // 공급자는 강릉 13곳을 주지만 중앙시장 반경 1km 안은 여섯 곳이다.
+        assertThat(captor.getValue()).hasSize(6);
+        assertThat(captor.getValue()).allSatisfy(lot -> assertThat(Coordinates.distanceMeters(
+                MARKET_LATITUDE, MARKET_LONGITUDE, lot.latitude(), lot.longitude()))
+                .isLessThanOrEqualTo((double) ParkingAccessService.RADIUS_METERS));
     }
 
     @Test
