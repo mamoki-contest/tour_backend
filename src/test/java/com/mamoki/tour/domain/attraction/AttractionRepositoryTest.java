@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import org.hibernate.Hibernate;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +31,19 @@ class AttractionRepositoryTest {
 
     @Autowired
     private RegionCodeRepository regionCodeRepository;
+
+    /**
+     * 앞선 테스트가 남긴 관광지를 비운다.
+     *
+     * <p>이 클래스는 {@code @Transactional} 이라 자기 것은 롤백되지만, 적재 테스트들은
+     * 트랜잭션 밖에서 쓰고 {@code @BeforeEach} 에서만 지운다. 그래서 마지막 테스트가 남긴
+     * 행이 다음 클래스까지 따라온다. 지도 경계 조회처럼 테이블 전체를 보는 검사는 그 행에
+     * 걸려 실행 순서에 따라 깨진다. 여기서 지우는 것도 이 트랜잭션과 함께 롤백된다.
+     */
+    @BeforeEach
+    void reset() {
+        attractionRepository.deleteAllInBatch();
+    }
 
     @Test
     @DisplayName("지역코드와 함께 관광지를 저장하고 표준 식별자로 조회한다")
@@ -112,17 +126,17 @@ class AttractionRepositoryTest {
     }
 
     @Test
-    @DisplayName("카탈로그를 마지막으로 적재한 시각을 돌려주고, 비어 있으면 null 이다")
-    void findLatestImportedAt() {
+    @DisplayName("카탈로그 내용이 마지막으로 바뀜 시각을 돌려주고, 비어 있으면 null 이다")
+    void findLatestCatalogChangeAt() {
         attractionRepository.deleteAll();
         attractionRepository.flush();
 
-        assertThat(attractionRepository.findLatestImportedAt()).isNull();
+        assertThat(attractionRepository.findLatestCatalogChangeAt()).isNull();
 
         RegionCode gangneung = regionCodeRepository.findByLawdCode("51150").orElseThrow();
         attractionRepository.saveAndFlush(attraction("30", "오죽헌", gangneung, null, null));
 
-        assertThat(attractionRepository.findLatestImportedAt()).isNotNull();
+        assertThat(attractionRepository.findLatestCatalogChangeAt()).isNotNull();
     }
 
     private Attraction attraction(String contentId, String name, RegionCode regionCode,

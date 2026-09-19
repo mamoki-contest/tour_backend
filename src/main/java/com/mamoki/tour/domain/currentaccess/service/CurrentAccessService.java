@@ -11,7 +11,6 @@ import org.springframework.stereotype.Service;
 import com.mamoki.tour.domain.cache.dto.CachedResponse;
 import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
 import com.mamoki.tour.domain.currentaccess.dto.CurrentAccessView;
-import com.mamoki.tour.domain.currentaccess.dto.ParkingView;
 import com.mamoki.tour.domain.currentaccess.dto.RoadFlowView;
 import com.mamoki.tour.global.enums.ApiProvider;
 import com.mamoki.tour.global.exception.ExternalApiException;
@@ -21,14 +20,15 @@ import com.mamoki.tour.infra.its.ItsItemConverter;
 /**
  * 관광지까지 가는 길의 현재 여건을 모은다.
  *
- * <p>도로는 국가교통정보센터에서, 주차는 한국교통안전공단에서 온다. 주차는 아직 승인 대기라
- * 항상 정보 없음이다. 둘 중 하나가 없다고 나머지를 감추지 않는다.
+ * <p>도로는 국가교통정보센터에서, 주차는 강릉시 교통정보 조회서비스와 전국주차장정보
+ * 표준데이터에서 온다. 셋은 서로 다른 공급자이고 커버리지도 다르다. 하나가 없다고 나머지를
+ * 감추지 않는다.
  *
- * <p>캐시를 5분만 둔다. 다른 신호들의 24시간과 다르다. 지금 이 순간의 도로 상태라 오래된
- * 값은 쓸모가 없고, 공급자도 5분 단위로 갱신한다.
+ * <p>도로 캐시를 5분만 둔다. 다른 신호들의 24시간과 다르다. 지금 이 순간의 도로 상태라
+ * 오래된 값은 쓸모가 없고, 공급자도 5분 단위로 갱신한다.
  *
  * <p>좌표가 없으면 조회하지 않는다. 어디 주변을 물어야 할지 알 수 없는데 임의의 좌표로
- * 물으면 다른 동네의 도로 상태를 그 관광지의 것으로 보여주게 된다.
+ * 물으면 다른 동네의 도로·주차 상태를 그 관광지의 것으로 보여주게 된다.
  */
 @Service
 public class CurrentAccessService {
@@ -40,17 +40,19 @@ public class CurrentAccessService {
 
     private final ItsClient itsClient;
     private final ExternalApiCacheService cacheService;
+    private final ParkingAccessService parkingAccessService;
 
-    public CurrentAccessService(ItsClient itsClient, ExternalApiCacheService cacheService) {
+    public CurrentAccessService(ItsClient itsClient, ExternalApiCacheService cacheService,
+                                ParkingAccessService parkingAccessService) {
         this.itsClient = itsClient;
         this.cacheService = cacheService;
+        this.parkingAccessService = parkingAccessService;
     }
 
     public CurrentAccessView resolve(BigDecimal latitude, BigDecimal longitude) {
         return new CurrentAccessView(
                 roadFlow(latitude, longitude),
-                // 승인 대기 중이라 아직 물어볼 곳이 없다. 자리는 계약에 두고 상태만 알린다.
-                ParkingView.noData(),
+                parkingAccessService.resolve(latitude, longitude),
                 LocalDateTime.now(),
                 ItsItemConverter.SOURCE);
     }

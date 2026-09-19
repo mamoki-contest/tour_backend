@@ -28,8 +28,12 @@ import com.mamoki.tour.domain.cache.dto.CachedResponse;
 import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
 import com.mamoki.tour.domain.relatedplace.dto.RelatedPlace;
 import com.mamoki.tour.domain.relatedplace.dto.RelatedPlaces;
+import com.mamoki.tour.domain.relatedplace.entity.AlternativeCuration;
+import com.mamoki.tour.domain.relatedplace.enums.CurationAction;
 import com.mamoki.tour.domain.relatedplace.enums.RelatedPlaceKind;
 import com.mamoki.tour.domain.relatedplace.enums.RelatedPlacesStatus;
+import com.mamoki.tour.domain.relatedplace.repository.AlternativeCurationRepository;
+import com.mamoki.tour.domain.relatedplace.service.AlternativeCurationService;
 import com.mamoki.tour.domain.relatedplace.service.RelatedPlaceService;
 import com.mamoki.tour.domain.visittiming.dto.VisitTiming;
 import com.mamoki.tour.domain.visittiming.enums.DateMode;
@@ -52,9 +56,13 @@ class RelatedPlaceServiceTest {
     private static final String GANGNEUNG = "51150";
     private static final String SOKCHO = "51210";
 
+    /** {@code attraction(...)} 이 만드는 기준 관광지의 표준 식별자. 큐레이션 조회 키다. */
+    private static final String BASE_CONTENT_ID = "1";
+
     private RelatedPlaceService relatedPlaceService;
     private ExternalApiCacheService cacheService;
     private VisitTimingService visitTimingService;
+    private AlternativeCurationRepository curationRepository;
     private TarRlteTarClient client;
 
     @BeforeEach
@@ -75,7 +83,12 @@ class RelatedPlaceServiceTest {
         // 기본은 모든 후보가 유효한 예측을 가진 상태. 결측은 각 테스트에서 따로 만든다.
         givenAllCandidatesForecast(VisitTimingStatus.LOW);
 
-        relatedPlaceService = new RelatedPlaceService(client, cacheService, visitTimingService);
+        // 기본은 빈 큐레이션 표. 큐레이션은 각 테스트에서 따로 넣는다.
+        curationRepository = Mockito.mock(AlternativeCurationRepository.class);
+        given(curationRepository.findAllByBaseContentId(anyString())).willReturn(List.of());
+
+        relatedPlaceService = new RelatedPlaceService(client, cacheService, visitTimingService,
+                new AlternativeCurationService(curationRepository));
     }
 
     private TarRlteTarClient realClient() {
@@ -321,6 +334,109 @@ class RelatedPlaceServiceTest {
         // 후보마다 부르면 시·군 캐시를 공유하지 못한다. 한 번에 넘겨 시·군 수만큼만 부르게 한다.
         verify(visitTimingService, times(1))
                 .resolve(any(), any(DateMode.class), any(), any());
+    }
+
+    @Test
+    @DisplayName("큐레이션 EXCLUDE 는 자격을 충족한 후보를 뺀다")
+    void appliesExcludeCuration() {
+        givenResponse(body(
+                row("경포해변", "정동진", "관광지", 1, GANGNEUNG),
+                row("경포해변", "주문진항", "관광지", 2, GANGNEUNG)));
+        givenCurations(curation(CurationAction.EXCLUDE, "정동진", GANGNEUNG));
+
+        RelatedPlaces result = relatedPlaceService.resolve(attraction("경포해변", GANGNEUNG), TODAY);
+
+        assertThat(result.alternatives().items()).extracting(RelatedPlace::name)
+                .containsExactly("주문진항");
+    }
+
+    @Test
+    @DisplayName("큐레이션 REPRESENTATIVE 는 자격을 충족한 후보를 맨 앞에 둔다")
+    void appliesRepresentativeCuration() {
+        givenResponse(body(
+                row("경포해변", "정동진", "관광지", 1, GANGNEUNG),
+                row("경포해변", "주문진항", "관광지", 2, GANGNEUNG)));
+        givenCurations(curation(CurationAction.REPRESENTATIVE, "주문진항", GANGNEUNG));
+
+        RelatedPlaces result = relatedPlaceService.resolve(attraction("경포해변", GANGNEUNG), TODAY);
+
+        assertThat(result.alternatives().items()).extracting(RelatedPlace::name)
+                .containsExactly("주문진항", "정동진");
+    }
+
+    @Test
+    @DisplayName("큐레이션은 자격 미달 후보를 되살리지 못한다")
+    void curationNeverRevivesUnqualifiedCandidate() {
+        // 예측이 없는 곳을 대표로 지정해도 담기지 않는다. 큐레이션은 추천 자격을 만들지 않는다.
+        givenResponse(body(
+                row("경포해변", "정동진", "관광지", 1, GANGNEUNG),
+                row("경포해변", "주문진항", "관광지", 2, GANGNEUNG)));
+        givenForecasts(Map.of(
+                GANGNEUNG + ":정동진", VisitTimingStatus.NO_DATA,
+                GANGNEUNG + ":주문진항", VisitTimingStatus.NORMAL));
+        givenCurations(curation(CurationAction.REPRESENTATIVE, "정동진", GANGNEUNG));
+
+        RelatedPlaces result = relatedPlaceService.resolve(attraction("경포해변", GANGNEUNG), TODAY);
+
+        assertThat(result.alternatives().items()).extracting(RelatedPlace::name)
+                .containsExactly("주문진항");
+    }
+
+    @Test
+    @DisplayName("큐레이션은 원래 장소와 관광지 아닌 곳도 되살리지 못한다")
+    void curationNeverRevivesSamePlaceOrCompanion() {
+        givenResponse(body(
+                row("경포해변", "경포 해변", "관광지", 1, GANGNEUNG),
+                row("경포해변", "초당순두부", "음식", 2, GANGNEUNG)));
+        givenCurations(
+                curation(CurationAction.REPRESENTATIVE, "경포해변", GANGNEUNG),
+                curation(CurationAction.REPRESENTATIVE, "초당순두부", GANGNEUNG));
+
+        RelatedPlaces result = relatedPlaceService.resolve(attraction("경포해변", GANGNEUNG), TODAY);
+
+        assertThat(result.alternatives().items()).isEmpty();
+        assertThat(result.companions().items()).extracting(RelatedPlace::name)
+                .containsExactly("초당순두부");
+    }
+
+    @Test
+    @DisplayName("다른 기준 관광지의 큐레이션은 적용되지 않는다")
+    void appliesOnlyCurationOfThisAttraction() {
+        givenResponse(body(row("경포해변", "정동진", "관광지", 1, GANGNEUNG)));
+
+        RelatedPlaces result = relatedPlaceService.resolve(attraction("경포해변", GANGNEUNG), TODAY);
+
+        assertThat(result.alternatives().items()).extracting(RelatedPlace::name)
+                .containsExactly("정동진");
+        verify(curationRepository, times(1)).findAllByBaseContentId(BASE_CONTENT_ID);
+    }
+
+    @Test
+    @DisplayName("큐레이션으로 후보가 모두 빠지면 자격 미달과 같은 상태로 알린다")
+    void reportsNoneQualifiedWhenCurationEmptiesList() {
+        // 화면에서 둘을 가려야 할 필요가 생기면 상태를 늘린다. 지금은 계약을 넓히지 않는다.
+        givenResponse(body(row("경포해변", "정동진", "관광지", 1, GANGNEUNG)));
+        givenCurations(curation(CurationAction.EXCLUDE, "정동진", GANGNEUNG));
+
+        RelatedPlaces result = relatedPlaceService.resolve(attraction("경포해변", GANGNEUNG), TODAY);
+
+        assertThat(result.alternatives().items()).isEmpty();
+        assertThat(result.alternatives().status()).isEqualTo(RelatedPlacesStatus.NONE_QUALIFIED);
+    }
+
+    private void givenCurations(AlternativeCuration... curations) {
+        given(curationRepository.findAllByBaseContentId(BASE_CONTENT_ID))
+                .willReturn(List.of(curations));
+    }
+
+    private static AlternativeCuration curation(CurationAction action, String name, String lawdCode) {
+        return AlternativeCuration.builder()
+                .baseContentId(BASE_CONTENT_ID)
+                .targetNormalizedName(name)
+                .targetLawdCode(lawdCode)
+                .action(action)
+                .reason("테스트 fixture")
+                .build();
     }
 
     private void givenResponse(String body) {

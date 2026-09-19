@@ -63,16 +63,22 @@ import com.mamoki.tour.infra.korservice.dto.KorServiceResponse;
  */
 class AttractionServiceTest {
 
-    /** 법정동 조회로 바꾼 뒤(#46) 실측한 강원 카탈로그 규모. 예전 정렬 상한 3,000 을 넘는다.
-     *  공급자 쪽 수치는 조금씩 바뀌므로 여기서는 상한을 넘는다는 사실만 붙든다. */
-    private static final int GANGWON_CATALOG_SIZE = 4_746;
+    /**
+     * 강원 카탈로그 규모. 2026-09-19 에 `areaBasedList2 lDongRegnCd=51` 로 실측한
+     * {@code totalCount} 다. 예전 정렬 상한 3,000 을 넘는다는 것이 이 상수의 요점이다.
+     *
+     * <p>공급자 쪽 수치는 조금씩 움직인다. 법정동 조회로 바꾼 직후(#46) 실측은 4,746
+     * 이었다. 두 값 중 어느 쪽이 맞다기보다 잰 날이 다르다. 테스트가 붙드는 것은 정확한
+     * 수가 아니라 상한을 넘는다는 사실이므로, 여기서는 최근 실측값을 쓴다.
+     */
+    private static final int GANGWON_CATALOG_SIZE = 4_741;
 
     private static final String GANGNEUNG_LAWD = "51150";
     private static final String SOKCHO_LAWD = "51210";
     private static final String GANGNEUNG_SIGUNGU = "1";
     private static final String SOKCHO_SIGUNGU = "5";
 
-    private static final LocalDateTime CATALOG_IMPORTED_AT = LocalDateTime.of(2026, 9, 18, 3, 0);
+    private static final LocalDateTime CATALOG_CHANGED_AT = LocalDateTime.of(2026, 9, 18, 3, 0);
     private static final LocalDateTime PROVIDER_COLLECTED_AT = LocalDateTime.of(2026, 9, 19, 9, 0);
 
     private AttractionService attractionService;
@@ -135,7 +141,7 @@ class AttractionServiceTest {
         });
         given(visitTimingService.resolve(any(), any(), any())).willReturn(Map.of());
 
-        given(attractionRepository.findLatestImportedAt()).willReturn(CATALOG_IMPORTED_AT);
+        given(attractionRepository.findLatestCatalogChangeAt()).willReturn(CATALOG_CHANGED_AT);
     }
 
     // --- 카탈로그 전수 정렬 ---------------------------------------------------
@@ -227,7 +233,7 @@ class AttractionServiceTest {
     @Test
     @DisplayName("카탈로그를 아직 적재하지 않았으면 공급자 응답으로 정렬한다")
     void fallsBackToProviderWhenCatalogNeverImported() {
-        given(attractionRepository.findLatestImportedAt()).willReturn(null);
+        given(attractionRepository.findLatestCatalogChangeAt()).willReturn(null);
         givenProviderPage(providerItem("9001", "속초해변"), providerItem("9002", "경포해변"));
         mentionCounts.put("9001", 170_653L);
         mentionCounts.put("9002", 140_006L);
@@ -245,7 +251,7 @@ class AttractionServiceTest {
     @Test
     @DisplayName("카탈로그가 비어 있고 공급자도 답하지 않으면 NO_DATA 로 알린다")
     void reportsNoDataWhenCatalogEmptyAndProviderSilent() {
-        given(attractionRepository.findLatestImportedAt()).willReturn(null);
+        given(attractionRepository.findLatestCatalogChangeAt()).willReturn(null);
         given(korServiceClient.areaBasedListByLawdKey(anyString(), any(), any(), anyInt(), anyInt()))
                 .willReturn("key");
         given(cacheService.fetch(any(), anyString(), any(), any()))
@@ -402,8 +408,8 @@ class AttractionServiceTest {
         assertThat(response.size()).isEqualTo(20);
         assertThat(response.dataStatus()).isEqualTo(DataStatus.AVAILABLE);
         assertThat(response.source()).isEqualTo("KorService2");
-        // 카탈로그를 마지막으로 적재한 시각. 서버가 응답을 만든 시각이 아니다.
-        assertThat(response.collectedAt()).isEqualTo(CATALOG_IMPORTED_AT);
+        // 카탈로그 내용이 마지막으로 바뀜 시각. 서버가 응답을 만든 시각이 아니다.
+        assertThat(response.collectedAt()).isEqualTo(CATALOG_CHANGED_AT);
 
         AttractionResponse item = response.items().get(0);
         assertThat(item.regionName()).isEqualTo("강릉시");
@@ -423,7 +429,7 @@ class AttractionServiceTest {
 
         assertThat(response.items()).extracting(AttractionResponse::contentId).containsExactly("9001");
         verify(attractionRepository, never()).findAllWithRegion();
-        verify(attractionRepository, never()).findLatestImportedAt();
+        verify(attractionRepository, never()).findLatestCatalogChangeAt();
     }
 
     // --- 도우미 ---------------------------------------------------------------
