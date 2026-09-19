@@ -7,8 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import org.springframework.http.client.ClientHttpRequestFactory;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -43,13 +42,13 @@ public class TatsCnctrRateClient {
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
 
-    public TatsCnctrRateClient(TatsCnctrRateProperties properties) {
+    public TatsCnctrRateClient(
+            TatsCnctrRateProperties properties,
+            @Qualifier("tatsCnctrRateRestClientBuilder") RestClient.Builder restClientBuilder) {
         this.properties = properties;
         this.objectMapper = new ObjectMapper()
                 .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
-        this.restClient = RestClient.builder()
-                .requestFactory(requestFactory(properties))
-                .build();
+        this.restClient = restClientBuilder.build();
     }
 
     /**
@@ -134,13 +133,5 @@ public class TatsCnctrRateClient {
         }
 
         return body;
-    }
-
-    private static ClientHttpRequestFactory requestFactory(TatsCnctrRateProperties properties) {
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(properties.connectTimeout());
-        factory.setReadTimeout(properties.readTimeout());
-
-        return factory;
     }
 }

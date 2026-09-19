@@ -17,3 +17,9 @@ spring:
       # 반드시 tour_test 스키마만 가리켜야 한다.
       ddl-auto: create-drop
     show-sql: true
+    properties:
+      hibernate:
+        # 같은 내용의 재적재가 행을 다시 쓰지 않는지(#77)를 확인하려면 UPDATE 가 몇 번
+        # 나갔는지 물을 데가 있어야 한다. 통계 수집은 그 자체로 비용이고 이 물음은 테스트
+        # 에서만 묻기 때문에 운영·로컬 프로파일에는 켜지 않는다.
+        generate_statistics: true

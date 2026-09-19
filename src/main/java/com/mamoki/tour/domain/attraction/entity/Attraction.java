@@ -1,6 +1,7 @@
 package com.mamoki.tour.domain.attraction.entity;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 
 import com.mamoki.tour.domain.region.entity.RegionCode;
@@ -41,6 +42,14 @@ import lombok.NoArgsConstructor;
         }
 )
 public class Attraction extends BaseEntity {
+
+    /**
+     * 좌표 컬럼이 담는 소수 자릿수.
+     *
+     * <p>아래 두 컬럼의 {@code scale} 과 같은 값이어야 한다. 이 상수가 유일한 출처가 되도록
+     * 좌표를 받는 자리마다 {@link #toColumnScale(BigDecimal)} 을 거친다.
+     */
+    private static final int COORDINATE_SCALE = 7;
 
     /** 표준 관광지 식별자. KorService2 의 contentId 를 그대로 사용한다. */
     @Column(name = "content_id", nullable = false, length = 30)
@@ -94,8 +103,8 @@ public class Attraction extends BaseEntity {
         this.name = name;
         this.imageUrl = imageUrl;
         this.address = address;
-        this.latitude = latitude;
-        this.longitude = longitude;
+        this.latitude = toColumnScale(latitude);
+        this.longitude = toColumnScale(longitude);
         this.contentTypeId = contentTypeId;
         this.regionCode = regionCode;
         this.centerRank = centerRank;
@@ -111,6 +120,10 @@ public class Attraction extends BaseEntity {
      * 붙들고 있어, 바뀌면 저장해 둔 장소가 끊긴다.
      *
      * <p>중심관광지 순위는 건드리지 않는다. 카탈로그와 적재 주기가 다른 별도 신호다.
+     *
+     * <p>좌표는 컬럼 자릿수로 맞춰서 들인다. 공급자가 주는 값은 소수 10자리인데 컬럼은
+     * 7자리라, 그대로 두면 DB 에서 읽은 값과 매번 달라 내용이 같은 재적재에서도 전 행이
+     * UPDATE 된다(#77).
      */
     public void refresh(String name, String imageUrl, String address,
                         BigDecimal latitude, BigDecimal longitude, String contentTypeId,
@@ -118,11 +131,28 @@ public class Attraction extends BaseEntity {
         this.name = name;
         this.imageUrl = imageUrl;
         this.address = address;
-        this.latitude = latitude;
-        this.longitude = longitude;
+        this.latitude = toColumnScale(latitude);
+        this.longitude = toColumnScale(longitude);
         this.contentTypeId = contentTypeId;
         this.regionCode = regionCode;
         this.dataStatus = dataStatus;
         this.baseAt = baseAt;
+    }
+
+    /**
+     * 좌표를 컬럼이 담는 자릿수로 맞춘다.
+     *
+     * <p>어차피 저장하는 순간 DB 가 잘라 내는 자리다. 여기서 미리 맞춰 두어야 다음 적재가
+     * 읽어 온 값과 같은 것을 같다고 볼 수 있다. 버림이 아니라 반올림하는 것은 MySQL 이
+     * {@code DECIMAL} 에 쓸 때 하는 일과 같게 두기 위해서다 — 다르면 저장한 값과 들고 있는
+     * 값이 어긋나 같은 문제가 한 자리 아래에서 되풀이된다.
+     *
+     * <p>소수 7자리는 위도 약 1cm 다. 지도 표시와 장소 매칭(#55) 어느 쪽에도 뜻이 없는 자리라
+     * 잃는 정밀도가 없다.
+     *
+     * @return 좌표가 없으면 null. 0 으로 채우지 않는다.
+     */
+    private static BigDecimal toColumnScale(BigDecimal coordinate) {
+        return coordinate == null ? null : coordinate.setScale(COORDINATE_SCALE, RoundingMode.HALF_UP);
     }
 }

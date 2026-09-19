@@ -46,9 +46,12 @@ import com.sun.net.httpserver.HttpServer;
  *   <li>캐시도 없고 공급자도 실패 → {@code NO_DATA}, 그래도 HTTP 200</li>
  * </ol>
  *
- * <p>가짜 공급자는 {@code MockRestServiceServer} 가 아니라 실제 HTTP 서버다. 각
- * 클라이언트가 {@code RestClient} 를 생성자 안에서 직접 만들어 쓰기 때문에 밖에서
- * 요청 팩토리를 갈아 끼울 자리가 없다(#66). 주소만 바꿔 끼울 수 있어 이 방법을 택했다.
+ * <p>가짜 공급자는 {@code MockRestServiceServer} 가 아니라 실제 HTTP 서버다. 처음에는
+ * 그럴 수밖에 없었다 — 클라이언트가 {@code RestClient} 를 생성자 안에서 직접 만들어 밖에서
+ * 요청 팩토리를 갈아 끼울 자리가 없었다(#66). #66 을 고친 뒤로는 선택이 됐고, 이 갈래들은
+ * <b>실제 소켓을 지나는 쪽</b>으로 남겨 둔다. 직렬화·연결까지 진짜로 태우는 자리가 하나는
+ * 있어야 하기 때문이다. 요청 URI 를 선언적으로 검사하는 쪽은
+ * {@link AttractionListMockServerThroughTest} 가 맡는다.
  */
 @SpringBootTest
 @AutoConfigureMockMvc

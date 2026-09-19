@@ -21,6 +21,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.springframework.web.client.RestClient;
 
 import com.mamoki.tour.domain.attraction.support.Coordinates;
 import com.mamoki.tour.domain.cache.dto.CachedResponse;
@@ -70,7 +71,7 @@ class ParkingAccessServiceTest {
     void setUp() throws Exception {
         client = new GnItsClient(new GnItsProperties(
                 "http://example.invalid", "key", 100, 0, Duration.ZERO,
-                Duration.ofSeconds(1), Duration.ofSeconds(1)));
+                Duration.ofSeconds(1), Duration.ofSeconds(1)), RestClient.builder());
 
         parkInfo = fixture("gnits-getParkInfo");
         parkRltm = fixture("gnits-getParkRltm");

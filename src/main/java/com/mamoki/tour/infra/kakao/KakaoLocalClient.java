@@ -6,10 +6,8 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatusCode;
-import org.springframework.http.client.ClientHttpRequestFactory;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -39,20 +37,17 @@ public class KakaoLocalClient {
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
 
-    @Autowired
-    public KakaoLocalClient(KakaoLocalProperties properties) {
-        this(properties, RestClient.builder().requestFactory(requestFactory(properties)));
-    }
-
     /**
-     * 요청을 가로챌 수 있는 생성자. 계약 테스트가 실제 호출 없이 응답을 주입하는 데 쓴다.
-     * 넘겨받은 빌더의 요청 경로는 그대로 둔다.
+     * 빌더는 밖에서 받는다. 계약 테스트가 {@code MockRestServiceServer} 를 붙인 빌더를 그대로
+     * 넘겨 실제 호출 없이 응답을 주입한다. 넘겨받은 빌더의 요청 경로는 그대로 둔다.
      */
-    KakaoLocalClient(KakaoLocalProperties properties, RestClient.Builder builder) {
+    public KakaoLocalClient(
+            KakaoLocalProperties properties,
+            @Qualifier("kakaoLocalRestClientBuilder") RestClient.Builder restClientBuilder) {
         this.properties = properties;
         this.objectMapper = new ObjectMapper()
                 .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
-        this.restClient = builder.build();
+        this.restClient = restClientBuilder.build();
     }
 
     public boolean hasCredentials() {
@@ -147,13 +142,5 @@ public class KakaoLocalClient {
             throw new ExternalApiException(ApiProvider.KAKAO_LOCAL,
                     "카카오 로컬 키워드 검색 응답을 해석하지 못했습니다: " + query, e);
         }
-    }
-
-    private static ClientHttpRequestFactory requestFactory(KakaoLocalProperties properties) {
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(properties.connectTimeout());
-        factory.setReadTimeout(properties.readTimeout());
-
-        return factory;
     }
 }

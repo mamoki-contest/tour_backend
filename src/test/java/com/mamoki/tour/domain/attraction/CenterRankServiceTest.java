@@ -17,6 +17,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.web.client.RestClient;
 
 import com.mamoki.tour.domain.attraction.dto.AttractionSnapshot;
 import com.mamoki.tour.domain.attraction.service.CenterRankService;
@@ -42,7 +43,7 @@ class CenterRankServiceTest {
         LocgoHubClient client = Mockito.mock(LocgoHubClient.class);
         given(client.areaBasedListKey(anyString(), anyInt())).willReturn("areaBasedList1?signguCd=51150");
         given(client.parse(anyString()))
-                .willAnswer(invocation -> new LocgoHubClient(properties()).parse(invocation.getArgument(0)));
+                .willAnswer(invocation -> new LocgoHubClient(properties(), RestClient.builder()).parse(invocation.getArgument(0)));
 
         cacheService = Mockito.mock(ExternalApiCacheService.class);
         given(cacheService.fetch(any(), anyString(), any(), any()))
