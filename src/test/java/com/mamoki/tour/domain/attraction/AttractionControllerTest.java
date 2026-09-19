@@ -234,6 +234,34 @@ class AttractionControllerTest {
                 .andExpect(jsonPath("$.data.items[0].visitTiming").doesNotExist());
     }
 
+    /**
+     * 지난 날짜는 지원 범위가 넓어지든 좁아지든 답할 수 있는 날이 아니다. 범위 밖 미래
+     * 날짜(200 + {@code OUT_OF_RANGE})와 달리 요청 자체가 잘못된 것이라 400 이다.
+     * 이 경계가 지원 범위를 공급자 응답에서 이끌어 내도록 바꾸면서 흐려지지 않게 고정한다.
+     */
+    @Test
+    @DisplayName("지난 날짜를 선택일로 보내면 400 으로 응답한다")
+    void rejectsPastVisitDate() throws Exception {
+        mvc.perform(get("/api/v1/attractions")
+                        .param("dateMode", "FIXED")
+                        .param("visitDate", requestDate(-1)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.resultCode").value("400-1"))
+                .andExpect(jsonPath("$.data[0].field").value("visitDate"))
+                .andExpect(jsonPath("$.data[0].msg").value("선택일은 오늘 이후여야 합니다."));
+    }
+
+    @Test
+    @DisplayName("오늘을 선택일로 보내면 통과한다")
+    void acceptsTodayAsVisitDate() throws Exception {
+        given(attractionService.search(any())).willReturn(listOf(null));
+
+        mvc.perform(get("/api/v1/attractions")
+                        .param("dateMode", "FIXED")
+                        .param("visitDate", requestDate(0)))
+                .andExpect(status().isOk());
+    }
+
     @Test
     @DisplayName("확정 모드에 선택일이 없으면 400 으로 응답한다")
     void rejectsFixedWithoutVisitDate() throws Exception {

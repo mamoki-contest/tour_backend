@@ -26,6 +26,7 @@ import com.mamoki.tour.domain.attraction.dto.AttractionSnapshot;
 import com.mamoki.tour.domain.cache.dto.CachedResponse;
 import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
 import com.mamoki.tour.domain.visittiming.dto.VisitTiming;
+import com.mamoki.tour.domain.visittiming.dto.VisitTimingDetail;
 import com.mamoki.tour.domain.visittiming.enums.DateMode;
 import com.mamoki.tour.domain.visittiming.enums.VisitTimingStatus;
 import com.mamoki.tour.domain.visittiming.service.VisitTimingService;
@@ -247,6 +248,90 @@ class VisitTimingServiceTest {
     }
 
     @Test
+    @DisplayName("공급자 창이 하루 뒤처지면 지원 범위 마지막 날도 하루 당긴다")
+    void followsLaggedProviderWindow() {
+        // 실제로 2026-09-08 에 부른 강릉시 응답이 20260907 ~ 20261006 이었다.
+        // 지원 범위를 오늘+29 로 고정해 두면 그 마지막 날은 공급자가 다루지도 않은 날이 된다.
+        givenResponse(body(TODAY.minusDays(1), 30, GANGNEUNG, "경포대"));
+
+        VisitTiming lastDay = visitTimingService.resolve(
+                List.of(attraction("1", "경포대", GANGNEUNG)),
+                DateMode.FIXED, TODAY.plusDays(28), TODAY).get("1");
+
+        assertThat(lastDay.supportedFrom()).isEqualTo(TODAY);
+        assertThat(lastDay.supportedTo()).isEqualTo(TODAY.plusDays(28));
+        // 범위의 마지막 날이 늘 정보 없음이던 것이 이 이슈(#52)의 증상이다.
+        assertThat(lastDay.status()).isNotEqualTo(VisitTimingStatus.NO_DATA);
+        assertThat(lastDay.forecastDays()).isEqualTo(29);
+    }
+
+    @Test
+    @DisplayName("공급자 창 밖 미래 날짜는 정보 없음이 아니라 범위 밖으로 알린다")
+    void marksOutOfRangeBeyondProviderWindow() {
+        givenResponse(body(TODAY.minusDays(1), 30, GANGNEUNG, "경포대"));
+
+        VisitTiming beyond = visitTimingService.resolve(
+                List.of(attraction("1", "경포대", GANGNEUNG)),
+                DateMode.FIXED, TODAY.plusDays(29), TODAY).get("1");
+
+        assertThat(beyond.status()).isEqualTo(VisitTimingStatus.OUT_OF_RANGE);
+        assertThat(beyond.supportedTo()).isEqualTo(TODAY.plusDays(28));
+    }
+
+    @Test
+    @DisplayName("목록과 상세가 같은 지원 범위를 쓴다")
+    void listAndDetailShareSupportedWindow() {
+        givenResponse(body(TODAY.minusDays(1), 30, GANGNEUNG, "경포대"));
+
+        VisitTiming fromList = visitTimingService.resolve(
+                List.of(attraction("1", "경포대", GANGNEUNG)),
+                DateMode.FIXED, TODAY.plusDays(28), TODAY).get("1");
+
+        VisitTimingDetail detail =
+                visitTimingService.resolveDetail(attraction("1", "경포대", GANGNEUNG), TODAY);
+
+        assertThat(detail.summary().supportedFrom()).isEqualTo(fromList.supportedFrom());
+        assertThat(detail.summary().supportedTo()).isEqualTo(fromList.supportedTo());
+
+        // 상세가 목록보다 하루 더 내려 보내면 그 하루는 목록에서 범위 밖인 날이 된다.
+        assertThat(detail.daily()).hasSize(29);
+        assertThat(detail.daily().get(28).date()).isEqualTo(fromList.supportedTo());
+        assertThat(detail.daily().get(28).status()).isEqualTo(fromList.status());
+    }
+
+    /**
+     * 지원 범위를 공급자 응답에서 이끌어 내므로, 이상한 날짜 한 줄이 그대로 범위를 늘릴 수
+     * 있다. 한 해 뒤 날짜가 한 줄 섞이면 하루치 판정이 300개 넘게 붙고 그 대부분이 값 없는
+     * 날이 된다. 공급자가 주는 것은 연속한 30일이므로 그것을 상한으로 삼는다.
+     */
+    @Test
+    @DisplayName("이상한 미래 날짜가 한 줄 섞여도 하루치 판정은 30일을 넘지 않는다")
+    void capsDailyForecastAtNominalLength() {
+        givenResponse(bodyWithStrayDate(TODAY, 30, TODAY.plusYears(1), GANGNEUNG, "경포대"));
+
+        VisitTimingDetail detail =
+                visitTimingService.resolveDetail(attraction("1", "경포대", GANGNEUNG), TODAY);
+
+        assertThat(detail.daily()).hasSize(30);
+        assertThat(detail.summary().supportedTo()).isEqualTo(TODAY.plusDays(29));
+    }
+
+    @Test
+    @DisplayName("예측을 받지 못하면 있을 수 있는 가장 넓은 범위를 안내한다")
+    void reportsWidestWindowWhenProviderUnavailable() {
+        given(cacheService.fetch(any(), anyString(), any(), any()))
+                .willReturn(CachedResponse.noData());
+
+        VisitTiming timing = visitTimingService.resolve(
+                List.of(attraction("1", "경포대", GANGNEUNG)),
+                DateMode.FLEXIBLE, null, TODAY).get("1");
+
+        // 창을 확인하지 못했다고 범위를 좁히면, 실제로는 답할 수 있는 날을 범위 밖이라고 자르게 된다.
+        assertThat(timing.supportedFrom()).isEqualTo(TODAY);
+        assertThat(timing.supportedTo()).isEqualTo(TODAY.plusDays(29));
+    }
+
+    @Test
     @DisplayName("응답 계약에 집중률 원본값이 들어가지 않는다")
     void neverExposesRawConcentrationRate() {
         // 원본값이 나가면 서로 다른 관광지를 그 값으로 줄 세울 수 있게 된다. PRD 가 금지한 절대 순위다.
@@ -271,18 +356,29 @@ class VisitTimingServiceTest {
         return body(dayCount, dayCount * names.length, lawdCode, names);
     }
 
+    private String body(int dayCount, int totalCount, String lawdCode, String... names) {
+        return body(TODAY, dayCount, totalCount, lawdCode, names);
+    }
+
+    /** 기준일이 오늘이 아닌 창. 실호출에서 기준일이 하루 뒤처지는 날이 있었다. */
+    private String body(LocalDate baseDate, int dayCount, String lawdCode, String... names) {
+        return body(baseDate, dayCount, dayCount * names.length, lawdCode, names);
+    }
+
     /**
      * 공급자 응답을 그대로 흉내 낸 JSON. 한 행이 (관광지 1곳 × 1일) 이다.
      * 집중률은 날짜가 뒤로 갈수록 커지므로 가장 이른 날이 가장 한산하다.
      */
-    private String body(int dayCount, int totalCount, String lawdCode, String... names) {
+    private String body(LocalDate baseDate, int dayCount, int totalCount,
+                        String lawdCode, String... names) {
+
         String items = java.util.Arrays.stream(names)
                 .flatMap(name -> IntStream.range(0, dayCount)
                         .mapToObj(i -> """
                                 {"baseYmd":"%s","areaCd":"%s","areaNm":"강원특별자치도",\
                                 "signguCd":"%s","signguNm":"시군","tAtsNm":"%s","cnctrRate":"%d"}"""
                                 .formatted(
-                                        TODAY.plusDays(i).format(
+                                        baseDate.plusDays(i).format(
                                                 java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd")),
                                         lawdCode.substring(0, 2), lawdCode, name, i + 1)))
                 .collect(Collectors.joining(","));
@@ -291,5 +387,20 @@ class VisitTimingServiceTest {
                 {"response":{"header":{"resultCode":"0000","resultMsg":"OK"},\
                 "body":{"items":{"item":[%s]},"numOfRows":1000,"pageNo":1,"totalCount":%d}}}"""
                 .formatted(items, totalCount);
+    }
+
+    /** 정상 창에 지원 범위를 한참 넘는 날짜 한 줄을 섞은 응답. */
+    private String bodyWithStrayDate(LocalDate baseDate, int dayCount, LocalDate strayDate,
+                                     String lawdCode, String name) {
+
+        String strayRow = """
+                {"baseYmd":"%s","areaCd":"%s","areaNm":"강원특별자치도",\
+                "signguCd":"%s","signguNm":"시군","tAtsNm":"%s","cnctrRate":"1"}"""
+                .formatted(
+                        strayDate.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd")),
+                        lawdCode.substring(0, 2), lawdCode, name);
+
+        return body(baseDate, dayCount, lawdCode, name)
+                .replace("\"item\":[", "\"item\":[" + strayRow + ",");
     }
 }

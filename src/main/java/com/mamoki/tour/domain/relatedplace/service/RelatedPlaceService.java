@@ -90,7 +90,9 @@ public class RelatedPlaceService {
 
     /**
      * @param attraction 상세를 여는 관광지. 이 장소의 시·군으로 공급자를 조회한다.
-     * @param today      지원 범위(오늘부터 30일)의 기준일
+     * @param today      지원 범위의 기준일. 범위 자체는 상수가 아니라 공급자 응답의 날짜에서
+     *                   나온다({@code ForecastWindow}). 기준일이 하루 뒤처진 날은 29일,
+     *                   그렇지 않은 날은 30일이며, 상한은 이 날부터 30일이다.
      */
     public RelatedPlaces resolve(AttractionSnapshot attraction, LocalDate today) {
         String baseYm = tarRlteTarClient.baseYm();
