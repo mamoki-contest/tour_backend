@@ -78,6 +78,47 @@ class AttractionRepositoryTest {
         assertThat(saved.getDataStatus()).isEqualTo(DataStatus.NO_DATA);
     }
 
+    /**
+     * 좌표는 컬럼이 담는 자릿수(7)로 맞춰서 들인다(#77).
+     *
+     * <p>여기서 {@code isEqualTo} 를 쓰는 것이 요점이다. {@code BigDecimal} 의 동치는
+     * 자릿수까지 보기 때문에, 수치만 같고 자릿수가 다르면 다음 적재가 DB 에서 읽은 값과
+     * 같다고 보지 못해 값이 그대로인 행에 UPDATE 를 낸다.
+     */
+    @Test
+    @DisplayName("공급자가 준 자릿수와 무관하게 좌표를 컬럼 자릿수로 맞춰 들인다")
+    void normalizesCoordinateToColumnScale() {
+        RegionCode gangneung = regionCodeRepository.findByLawdCode("51150").orElseThrow();
+
+        Attraction saved = attractionRepository.saveAndFlush(attraction("40", "가람집옹심이", gangneung,
+                new BigDecimal("37.7611934162"), new BigDecimal("128.9393320379")));
+
+        assertThat(saved.getLatitude()).isEqualTo(new BigDecimal("37.7611934"));
+        assertThat(saved.getLongitude()).isEqualTo(new BigDecimal("128.9393320"));
+    }
+
+    /**
+     * 자릿수만 다른 같은 좌표로 갱신하면 들고 있는 값이 그대로다(#77).
+     *
+     * <p>Hibernate 가 UPDATE 를 낼지 말지는 이 동치 판정에 달려 있다. 적재 경로 전체에서
+     * 확인하는 것은 {@code AttractionCatalogImportServiceTest} 가 맡는다.
+     */
+    @Test
+    @DisplayName("자릿수만 다른 같은 좌표로 갱신하면 값이 그대로다")
+    void refreshWithSameCoordinateKeepsValue() {
+        RegionCode gangneung = regionCodeRepository.findByLawdCode("51150").orElseThrow();
+        Attraction saved = attractionRepository.saveAndFlush(attraction("41", "오죽헌", gangneung,
+                new BigDecimal("37.7794400"), new BigDecimal("128.8784600")));
+        BigDecimal before = saved.getLatitude();
+
+        saved.refresh(saved.getName(), null, null,
+                new BigDecimal("37.7794400000"), new BigDecimal("128.8784600000"), null,
+                gangneung, DataStatus.AVAILABLE, saved.getBaseAt());
+
+        assertThat(saved.getLatitude()).isEqualTo(before);
+        assertThat(saved.getLongitude()).isEqualTo(new BigDecimal("128.8784600"));
+    }
+
     @Test
     @DisplayName("지도 경계로 관광지를 조회한다")
     void findWithinBoundingBox() {
