@@ -29,6 +29,14 @@ import com.mamoki.tour.infra.tatscnctrrate.dto.TatsCnctrRateResponse;
  *
  * <p>fixture 는 강릉시(51150) 를 numOfRows=100 으로 실제 호출해 받은 응답이다.
  * 3곳은 30일치가 모두 들어 있고, 4번째 장소는 페이지 경계에서 10일치만 잘려 들어 있다.
+ *
+ * <p>같은 조회를 서로 다른 날에 한 응답을 두 개 둔다. 예측 창의 기준일이 조회일과 같은 날도,
+ * 하루 뒤처지는 날도 있다는 사실을 여기서 고정한다(#52).
+ *
+ * <ul>
+ *   <li>{@code tatscnctrrate-tatsCnctrRatedList.json} — 2026-09-08 호출, {@code 20260907 ~ 20261006}</li>
+ *   <li>{@code tatscnctrrate-tatsCnctrRatedList-sameday.json} — 2026-09-19 호출, {@code 20260919 ~ 20261018}</li>
+ * </ul>
  */
 class TatsCnctrRateContractTest {
 
@@ -84,13 +92,34 @@ class TatsCnctrRateContractTest {
     }
 
     @Test
-    @DisplayName("예측 창은 조회일 기준 30일이며 날짜 오름차순으로 정렬된다")
+    @DisplayName("예측 창은 연속한 30일이며 날짜 오름차순으로 정렬된다")
     void sortsDaysAscending() {
         List<DailyConcentration> days = byName().get("강릉 경포대").days();
 
         assertThat(days.get(0).date()).isEqualTo(LocalDate.of(2026, 9, 7));
         assertThat(days.get(days.size() - 1).date()).isEqualTo(LocalDate.of(2026, 10, 6));
         assertThat(days).extracting(DailyConcentration::date).isSorted();
+    }
+
+    @Test
+    @DisplayName("예측 창의 기준일은 조회일과 같을 수도, 하루 전일 수도 있다")
+    void windowBaseDateIsNotAlwaysToday() throws Exception {
+        // 두 fixture 는 같은 강릉시(51150) 를 서로 다른 날에 실제로 부른 응답이다.
+        //   2026-09-08 호출 → 20260907 ~ 20261006 (기준일이 하루 전)
+        //   2026-09-19 호출 → 20260919 ~ 20261018 (기준일이 조회일)
+        // 그래서 "오늘부터 30일"이나 "내일부터 30일" 같은 상수로는 어느 날엔가 반드시 어긋난다.
+        // 지원 범위는 ForecastWindow 가 응답의 날짜에서 이끌어 낸다.
+        List<DailyConcentration> sameDay = daysOf(
+                "/fixtures/tatscnctrrate-tatsCnctrRatedList-sameday.json", "강릉 경포대");
+
+        assertThat(sameDay).hasSize(30);
+        assertThat(sameDay.get(0).date()).isEqualTo(LocalDate.of(2026, 9, 19));
+        assertThat(sameDay.get(29).date()).isEqualTo(LocalDate.of(2026, 10, 18));
+
+        // 기준일은 달라도 창의 길이와 연속성은 같다.
+        assertThat(byName().get("강릉 경포대").days()).hasSize(30);
+        assertThat(sameDay.get(0).date())
+                .isNotEqualTo(byName().get("강릉 경포대").days().get(0).date());
     }
 
     @Test
@@ -193,6 +222,20 @@ class TatsCnctrRateContractTest {
     private Map<String, AttractionForecast> byName() {
         return TatsCnctrRateItemConverter.convertAll(response.items()).stream()
                 .collect(Collectors.toMap(AttractionForecast::name, Function.identity()));
+    }
+
+    /** 다른 날에 받아 둔 fixture 의 한 장소를 읽는다. */
+    private List<DailyConcentration> daysOf(String fixture, String name) throws Exception {
+        String body;
+        try (InputStream in = getClass().getResourceAsStream(fixture)) {
+            body = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+
+        return TatsCnctrRateItemConverter.convertAll(client.parse(body).items()).stream()
+                .filter(forecast -> name.equals(forecast.name()))
+                .findFirst()
+                .orElseThrow()
+                .days();
     }
 
     private static TatsCnctrRateItem item(String baseYmd, String name, String rate) {

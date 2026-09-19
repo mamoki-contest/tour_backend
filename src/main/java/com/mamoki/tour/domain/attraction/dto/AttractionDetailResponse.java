@@ -15,14 +15,14 @@ import io.swagger.v3.oas.annotations.media.Schema;
 /**
  * 관광지 상세의 표준 계약.
  *
- * <p>기본정보, 30일 방문 혼잡도 예측, 대체지 후보, 함께 가기 좋은 곳을 각각 독립 필드로 둔다.
+ * <p>기본정보, 방문 혼잡도 예측, 대체지 후보, 함께 가기 좋은 곳을 각각 독립 필드로 둔다.
  * 하나의 점수로 합치지 않고, 어느 하나의 결측을 다른 신호로 추정하지도 않는다.
  *
  * @param dataStatus  기본정보의 신선도. 연관 장소와 예측은 각자의 상태를 따로 갖는다.
  * @param collectedAt 기본정보를 수집한 시각. 서버 저장 시각이 아니라 공급자 응답 기준이다.
  */
 @Schema(description = """
-        관광지 상세. 기본정보·30일 예측·대체지 후보·함께 가기 좋은 곳이 각각 독립 필드입니다.
+        관광지 상세. 기본정보·방문 혼잡도 예측·대체지 후보·함께 가기 좋은 곳이 각각 독립 필드입니다.
         결측은 모두 null 또는 명시적 상태이며 0 으로 해석하면 안 됩니다.""")
 public record AttractionDetailResponse(
 
@@ -78,12 +78,13 @@ public record AttractionDetailResponse(
         String source,
 
         @Schema(description = """
-                이 장소의 유연 모드 판정. 향후 30일 중 한산 예상일과 지원 범위를 담습니다.
+                이 장소의 유연 모드 판정. 지원 범위 안의 한산 예상일과 그 범위를 담습니다.
                 status 는 이 장소 자신의 분포 안에서의 상대 수준이며, 다른 관광지와 비교하면 안 됩니다.""")
         VisitTiming visitTiming,
 
         @Schema(description = """
-                지원 범위 30일의 하루치 판정. 날짜 오름차순입니다.
+                지원 범위의 하루치 판정. 날짜 오름차순이며 visitTiming 의 supportedFrom ~ supportedTo
+                와 일치합니다. 공급자 창에 따라 29일일 수도 30일일 수도 있으니 길이를 가정하지 마세요.
                 집중률 원본값은 담지 않습니다. 값을 노출하면 장소 사이의 절대 순위를 만들 수 있습니다.""")
         List<DailyVisitTiming> dailyForecast,
 

@@ -31,6 +31,23 @@ springdoc:
     path: /v3/api-docs
 
 tour:
+  batch:
+    schedule:
+      # 적재·수집 스케줄. 기본은 모두 꺼짐이며, 하나도 켜지 않으면 스케줄러 자체가 뜨지 않는다.
+      # 켜는 순간 사람이 명령을 치지 않아도 외부 API 호출이 나가므로 배포만으로 켜지지 않게 한다.
+      # --job=... 으로 띄운 배치 프로세스에서는 켜져 있어도 뜨지 않는다.
+      #
+      # cron 과 시간대의 기본값은 BatchScheduleProperties 상수가 유일한 출처다. 여기에 다시
+      # 적으면 한쪽만 바뀌어도 알 수 없으므로, 비워 두고 바꿀 때만 환경변수로 준다.
+      # 기본값: 카탈로그 매월 1일 02:00, 언급량 매월 1일 03:00, 시간대 Asia/Seoul.
+      zone: ${BATCH_SCHEDULE_ZONE:}
+      mention:
+        enabled: ${BATCH_SCHEDULE_MENTION_ENABLED:false}
+        cron: ${BATCH_SCHEDULE_MENTION_CRON:}
+      catalog:
+        # 카탈로그 적재는 실패했을 때 사람이 봐야 하는 작업이라 운영에서도 켜지 않는 쪽을 권한다.
+        enabled: ${BATCH_SCHEDULE_CATALOG_ENABLED:false}
+        cron: ${BATCH_SCHEDULE_CATALOG_CRON:}
   api:
     kor-service:
       # 공공데이터포털 API 게이트웨이. 로컬에서 HTTPS 가 막히면 .env 로 http 를 지정한다.

@@ -43,7 +43,14 @@ import com.mamoki.tour.domain.visitorstats.importer.VisitorStatsImportService;
 @Component
 public class BatchJobRunner implements ApplicationRunner {
 
-    private static final String JOB_OPTION = "job";
+    /**
+     * 무엇을 돌릴지 고르는 인자 이름.
+     *
+     * <p>스케줄러도 이 이름으로 배치 실행 여부를 가린다. 두 곳이 다른 이름을 보면 배치
+     * 프로세스에서 스케줄러가 함께 뜬다.
+     */
+    public static final String JOB_OPTION = "job";
+
     private static final String MONTH_OPTION = "month";
     private static final String DIR_OPTION = "dir";
     private static final String FILE_OPTION = "file";
