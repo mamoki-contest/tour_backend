@@ -30,6 +30,8 @@ import com.mamoki.tour.domain.search.dto.AttractionSearchResponse;
 import com.mamoki.tour.domain.search.enums.SearchResultType;
 import com.mamoki.tour.domain.search.enums.SupportedTheme;
 import com.mamoki.tour.domain.search.service.AttractionSearchService;
+import com.mamoki.tour.domain.search.support.ThemeEntry;
+import com.mamoki.tour.domain.search.support.ThemeResolver;
 import com.mamoki.tour.global.enums.DataStatus;
 import com.mamoki.tour.infra.korservice.KorServiceClient;
 import com.mamoki.tour.infra.korservice.KorServiceProperties;
@@ -45,6 +47,9 @@ class AttractionSearchServiceTest {
     private String beachFixture;
     private String emptyFixture;
     private ExternalApiCacheService cacheService;
+    private KorServiceClient client;
+    private AttractionService attractionService;
+    private RegionCodeRepository regionCodeRepository;
     private AttractionSearchService service;
 
     @BeforeEach
@@ -52,7 +57,7 @@ class AttractionSearchServiceTest {
         beachFixture = read("/fixtures/korservice-searchKeyword2.json");
         emptyFixture = read("/fixtures/korservice-searchKeyword2-empty.json");
 
-        KorServiceClient client = Mockito.mock(KorServiceClient.class);
+        client = Mockito.mock(KorServiceClient.class);
         given(client.searchKeywordByLawdKey(anyString(), any(), any(), anyString(), anyInt(), anyInt()))
                 .willAnswer(invocation -> "searchKeyword2?keyword=" + invocation.getArgument(3));
         given(client.parse(anyString(), anyString()))
@@ -62,7 +67,7 @@ class AttractionSearchServiceTest {
         cacheService = Mockito.mock(ExternalApiCacheService.class);
         stubKeyword("해수욕장", CachedResponse.available(beachFixture, LocalDateTime.now()));
 
-        AttractionService attractionService = Mockito.mock(AttractionService.class);
+        attractionService = Mockito.mock(AttractionService.class);
         given(attractionService.describe(any(), any(), any(), any()))
                 .willAnswer(invocation -> {
                     List<AttractionSnapshot> snapshots = invocation.getArgument(0);
@@ -73,13 +78,18 @@ class AttractionSearchServiceTest {
                             .toList();
                 });
 
-        RegionCodeRepository regionCodeRepository = Mockito.mock(RegionCodeRepository.class);
+        regionCodeRepository = Mockito.mock(RegionCodeRepository.class);
         given(regionCodeRepository.findByAreaCodeAndSigunguCode(anyString(), anyString()))
                 .willReturn(java.util.Optional.of(RegionCode.builder()
                         .lawdCode("51150").areaCode("32").sigunguCode("1").name("강릉시").build()));
 
-        service = new AttractionSearchService(client, cacheService, attractionService,
-                regionCodeRepository);
+        service = serviceWith(ThemeResolver.withThemes(ThemeFixtures.seedThemes()));
+    }
+
+    /** 시드에서 온 테마 목록만 갈아 끼운 검색 서비스. */
+    private AttractionSearchService serviceWith(ThemeResolver themeResolver) {
+        return new AttractionSearchService(client, cacheService, attractionService,
+                regionCodeRepository, themeResolver);
     }
 
     private static String read(String path) throws Exception {
@@ -196,6 +206,35 @@ class AttractionSearchServiceTest {
 
         assertThat(response.items()).isNotEmpty();
         assertThat(response.suggestedThemes()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("지원 테마 시드가 비어 있으면 모든 검색이 일반 검색으로 떨어진다")
+    void fallsBackToGeneralSearchWithoutSeed() {
+        // 오류가 아니다. 지원 테마 표시만 사라지고 검색 자체는 그대로 동작해야 한다.
+        AttractionSearchResponse response = serviceWith(ThemeResolver.withThemes(List.of()))
+                .search("해수욕장", null, 1, 20);
+
+        assertThat(response.resultType()).isEqualTo(SearchResultType.GENERAL_SEARCH);
+        assertThat(response.appliedTheme()).isNull();
+        assertThat(response.appliedQuery()).isEqualTo("해수욕장");
+        assertThat(response.suggestedThemes()).isEmpty();
+        assertThat(response.dataStatus()).isEqualTo(DataStatus.AVAILABLE);
+    }
+
+    @Test
+    @DisplayName("자격 토큰이 비어 있으면 어떤 장소도 지원 테마 결과에 담기지 않는다")
+    void qualifiesNothingWithoutMatchTokens() {
+        // 시드에서 값이 빠졌을 때 전부 통과시키면 지원 테마 표시가 보증하는 것이 없어진다.
+        AttractionSearchService withoutTokens = serviceWith(ThemeResolver.withThemes(List.of(
+                new ThemeEntry(SupportedTheme.BEACH, "해수욕장", List.of("해수욕장"),
+                        List.of("해수욕장"), List.of()))));
+
+        AttractionSearchResponse response = withoutTokens.search("해수욕장", null, 1, 20);
+
+        assertThat(response.resultType()).isEqualTo(SearchResultType.SUPPORTED_THEME);
+        assertThat(response.items()).isEmpty();
+        assertThat(response.dataStatus()).isEqualTo(DataStatus.AVAILABLE);
     }
 
     @Test
