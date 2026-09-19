@@ -1,5 +1,6 @@
 package com.mamoki.tour.domain.attraction.importer;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -13,6 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.mamoki.tour.domain.attraction.dto.AttractionSnapshot;
 import com.mamoki.tour.domain.attraction.entity.Attraction;
+import com.mamoki.tour.domain.attraction.entity.AttractionCatalogImport;
+import com.mamoki.tour.domain.attraction.repository.AttractionCatalogImportRepository;
 import com.mamoki.tour.domain.attraction.repository.AttractionRepository;
 import com.mamoki.tour.domain.region.entity.RegionCode;
 import com.mamoki.tour.domain.region.repository.RegionCodeRepository;
@@ -33,6 +36,10 @@ import com.mamoki.tour.infra.korservice.dto.KorServiceResponse;
  *
  * <p>캐시 계층을 거치지 않고 공급자를 직접 부른다. 운영자가 돌리는 배치라 최신 값을 받아야
  * 하고, 24시간 캐시는 사용자 조회를 위한 것이다.
+ *
+ * <p>적재를 마치면 {@link AttractionCatalogImport} 에 실행 이력을 한 줄 남긴다. 관광지
+ * 행의 {@code modifiedAt} 은 값이 실제로 바뀔 때만 움직여서 "언제 돌렸는가"에 답하지
+ * 못하기 때문이다(#69). 적재와 같은 트랜잭션이라 실패하면 이력도 함께 사라진다.
  */
 @Service
 public class AttractionCatalogImportService {
@@ -60,18 +67,22 @@ public class AttractionCatalogImportService {
 
     private final KorServiceClient korServiceClient;
     private final AttractionRepository attractionRepository;
+    private final AttractionCatalogImportRepository catalogImportRepository;
     private final RegionCodeRepository regionCodeRepository;
 
     public AttractionCatalogImportService(KorServiceClient korServiceClient,
                                           AttractionRepository attractionRepository,
+                                          AttractionCatalogImportRepository catalogImportRepository,
                                           RegionCodeRepository regionCodeRepository) {
         this.korServiceClient = korServiceClient;
         this.attractionRepository = attractionRepository;
+        this.catalogImportRepository = catalogImportRepository;
         this.regionCodeRepository = regionCodeRepository;
     }
 
     @Transactional
     public AttractionCatalogImportResult importAll() {
+        LocalDateTime startedAt = LocalDateTime.now();
         List<AttractionSnapshot> snapshots = fetchAll();
 
         if (snapshots.isEmpty()) {
@@ -122,10 +133,23 @@ public class AttractionCatalogImportService {
             inserted++;
         }
 
+        AttractionCatalogImportResult result =
+                new AttractionCatalogImportResult(snapshots.size(), inserted, updated, regionUnmapped);
+
+        // 실행 시각을 따로 남긴다. 내용이 같은 재적재는 attraction.modified_at 을 밀지 않아
+        // 거기에 물으면 "언제 돌렸는가"에 답할 수 없다(#69).
+        catalogImportRepository.save(AttractionCatalogImport.builder()
+                .startedAt(startedAt)
+                .completedAt(LocalDateTime.now())
+                .fetchedCount(result.fetched())
+                .savedCount(result.saved())
+                .regionUnmappedCount(regionUnmapped)
+                .build());
+
         log.info("관광지 카탈로그 적재 완료: 받음={}, 신규={}, 갱신={}, 지역 미매핑={}",
                 snapshots.size(), inserted, updated, regionUnmapped);
 
-        return new AttractionCatalogImportResult(snapshots.size(), inserted, updated, regionUnmapped);
+        return result;
     }
 
     /**

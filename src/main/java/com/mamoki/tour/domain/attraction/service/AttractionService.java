@@ -24,6 +24,7 @@ import com.mamoki.tour.domain.attraction.dto.OnlineMentionView;
 import com.mamoki.tour.domain.attraction.dto.TmapRankView;
 import com.mamoki.tour.domain.attraction.dto.VisitorStatsView;
 import com.mamoki.tour.domain.attraction.entity.Attraction;
+import com.mamoki.tour.domain.attraction.repository.AttractionCatalogImportRepository;
 import com.mamoki.tour.domain.attraction.repository.AttractionRepository;
 import com.mamoki.tour.domain.attraction.support.AttractionSortOrder;
 import com.mamoki.tour.domain.attraction.support.AttractionSortOrder.Ordered;
@@ -108,6 +109,7 @@ public class AttractionService {
     private final SignalLookupService signalLookupService;
     private final VisitTimingService visitTimingService;
     private final AttractionRepository attractionRepository;
+    private final AttractionCatalogImportRepository catalogImportRepository;
     private final AttractionSortOrder sortOrder = new AttractionSortOrder();
 
     public AttractionService(KorServiceClient korServiceClient,
@@ -116,7 +118,8 @@ public class AttractionService {
                              CenterRankService centerRankService,
                              SignalLookupService signalLookupService,
                              VisitTimingService visitTimingService,
-                             AttractionRepository attractionRepository) {
+                             AttractionRepository attractionRepository,
+                             AttractionCatalogImportRepository catalogImportRepository) {
         this.korServiceClient = korServiceClient;
         this.cacheService = cacheService;
         this.regionCodeRepository = regionCodeRepository;
@@ -124,6 +127,7 @@ public class AttractionService {
         this.signalLookupService = signalLookupService;
         this.visitTimingService = visitTimingService;
         this.attractionRepository = attractionRepository;
+        this.catalogImportRepository = catalogImportRepository;
     }
 
     /**
@@ -173,7 +177,24 @@ public class AttractionService {
             return searchWholeRangeFromProvider(request, region);
         }
 
-        return searchWholeRangeFromCatalog(request, region, catalogChangedAt);
+        return searchWholeRangeFromCatalog(request, region, catalogCollectedAt(catalogChangedAt));
+    }
+
+    /**
+     * 카탈로그 응답의 기준 시점. <b>마지막으로 적재를 마친 시각</b>이다(#69).
+     *
+     * <p>관광지 행의 {@code modifiedAt} 은 값이 실제로 바뀔 때만 움직인다. 공급자 내용이
+     * 그대로인 재적재는 UPDATE 자체가 나가지 않아, 오늘 돌린 적재가 지난달 시각으로 보인다.
+     * 적재 이력은 돌 때마다 한 줄이 늘어나므로 이 물음에 정확히 답한다.
+     *
+     * @param catalogChangedAt 이력이 없을 때 쓰는 값. 이 기능이 생기기 전에 적재한 환경에는
+     *                         카탈로그가 가득한데 이력이 한 줄도 없다. 그때는 지금까지 쓰던
+     *                         카탈로그 변경 시각을 그대로 쓴다. 없는 시각을 지어내지 않는다.
+     */
+    private LocalDateTime catalogCollectedAt(LocalDateTime catalogChangedAt) {
+        LocalDateTime lastImportedAt = catalogImportRepository.findLatestCompletedAt();
+
+        return lastImportedAt == null ? catalogChangedAt : lastImportedAt;
     }
 
     /**
@@ -184,7 +205,7 @@ public class AttractionService {
      */
     private AttractionListResponse searchWholeRangeFromCatalog(AttractionSearchRequest request,
                                                                RegionCode region,
-                                                               LocalDateTime catalogChangedAt) {
+                                                               LocalDateTime collectedAt) {
         int page = request.pageOrDefault();
         int size = request.sizeOrDefault();
 
@@ -194,7 +215,7 @@ public class AttractionService {
         Ordered ordered = orderBySort(toResponses(withinBounds, request), request.sort());
 
         return new AttractionListResponse(pageOf(ordered.items(), page, size), ordered.items().size(),
-                page, size, request.sort(), ordered.applied(), DataStatus.AVAILABLE, catalogChangedAt,
+                page, size, request.sort(), ordered.applied(), DataStatus.AVAILABLE, collectedAt,
                 KorServiceItemConverter.SOURCE);
     }
 

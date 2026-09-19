@@ -35,6 +35,7 @@ import com.mamoki.tour.domain.attraction.dto.AttractionSearchRequest;
 import com.mamoki.tour.domain.attraction.dto.AttractionSort;
 import com.mamoki.tour.domain.attraction.dto.OnlineMentionView;
 import com.mamoki.tour.domain.attraction.entity.Attraction;
+import com.mamoki.tour.domain.attraction.repository.AttractionCatalogImportRepository;
 import com.mamoki.tour.domain.attraction.repository.AttractionRepository;
 import com.mamoki.tour.domain.attraction.service.AttractionService;
 import com.mamoki.tour.domain.attraction.service.CenterRankService;
@@ -83,10 +84,14 @@ class AttractionServiceTest {
     private static final String SOKCHO_SIGUNGU = "5";
 
     private static final LocalDateTime CATALOG_CHANGED_AT = LocalDateTime.of(2026, 9, 18, 3, 0);
+
+    /** 마지막으로 적재를 마친 시각. 내용이 바뀐 시각보다 뒤다 — 그 사이 재적재가 있었다(#69). */
+    private static final LocalDateTime CATALOG_IMPORTED_AT = LocalDateTime.of(2026, 9, 19, 2, 0);
     private static final LocalDateTime PROVIDER_COLLECTED_AT = LocalDateTime.of(2026, 9, 19, 9, 0);
 
     private AttractionService attractionService;
     private AttractionRepository attractionRepository;
+    private AttractionCatalogImportRepository catalogImportRepository;
     private KorServiceClient korServiceClient;
     private ExternalApiCacheService cacheService;
     private RegionCodeRepository regionCodeRepository;
@@ -100,6 +105,7 @@ class AttractionServiceTest {
     @BeforeEach
     void setUp() {
         attractionRepository = Mockito.mock(AttractionRepository.class);
+        catalogImportRepository = Mockito.mock(AttractionCatalogImportRepository.class);
         korServiceClient = Mockito.mock(KorServiceClient.class);
         cacheService = Mockito.mock(ExternalApiCacheService.class);
         regionCodeRepository = Mockito.mock(RegionCodeRepository.class);
@@ -109,7 +115,7 @@ class AttractionServiceTest {
 
         attractionService = new AttractionService(korServiceClient, cacheService,
                 regionCodeRepository, centerRankService, signalLookupService,
-                visitTimingService, attractionRepository);
+                visitTimingService, attractionRepository, catalogImportRepository);
 
         given(regionCodeRepository.findAllByAreaCode("32"))
                 .willReturn(List.of(region(GANGNEUNG_LAWD, GANGNEUNG_SIGUNGU, "강릉시"),
@@ -146,6 +152,7 @@ class AttractionServiceTest {
         given(visitTimingService.resolve(any(), any(), any())).willReturn(Map.of());
 
         given(attractionRepository.findLatestCatalogChangeAt()).willReturn(CATALOG_CHANGED_AT);
+        given(catalogImportRepository.findLatestCompletedAt()).willReturn(CATALOG_IMPORTED_AT);
     }
 
     // --- 카탈로그 전수 정렬 ---------------------------------------------------
@@ -413,8 +420,8 @@ class AttractionServiceTest {
         assertThat(response.size()).isEqualTo(20);
         assertThat(response.dataStatus()).isEqualTo(DataStatus.AVAILABLE);
         assertThat(response.source()).isEqualTo("KorService2");
-        // 카탈로그 내용이 마지막으로 바뀜 시각. 서버가 응답을 만든 시각이 아니다.
-        assertThat(response.collectedAt()).isEqualTo(CATALOG_CHANGED_AT);
+        // 카탈로그를 마지막으로 적재한 시각. 서버가 응답을 만든 시각이 아니다.
+        assertThat(response.collectedAt()).isEqualTo(CATALOG_IMPORTED_AT);
 
         AttractionResponse item = response.items().get(0);
         assertThat(item.regionName()).isEqualTo("강릉시");
@@ -817,6 +824,52 @@ class AttractionServiceTest {
         assertThat(response.sortApplied()).isFalse();
         // 요청한 기준은 그대로 반향한다. 무엇을 요청했는지는 프론트가 알아야 한다.
         assertThat(response.sort()).isEqualTo(AttractionSort.ONLINE_MENTION_DESC);
+    }
+
+    // --- 기준 시점 (#69) ---------------------------------------------------------
+
+    /**
+     * 내용이 같은 재적재는 {@code attraction.modified_at} 을 밀지 않는다. 그래서 기준 시점은
+     * 카탈로그 변경 시각이 아니라 마지막 적재 이력의 시각이다(#69).
+     */
+    @Test
+    @DisplayName("카탈로그 조회의 기준 시점은 마지막으로 적재를 마친 시각이다")
+    void collectedAtComesFromTheLastImport() {
+        givenCatalog(catalogOf(3));
+
+        AttractionListResponse response = attractionService.search(
+                sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20));
+
+        assertThat(response.collectedAt()).isEqualTo(CATALOG_IMPORTED_AT);
+        assertThat(response.collectedAt()).isNotEqualTo(CATALOG_CHANGED_AT);
+    }
+
+    @Test
+    @DisplayName("적재 이력이 없으면 지금까지 쓰던 카탈로그 변경 시각을 그대로 쓴다")
+    void collectedAtFallsBackToCatalogChangeWithoutHistory() {
+        // 이 이력이 생기기 전에 적재한 환경. 카탈로그는 가득한데 이력이 한 줄도 없다.
+        given(catalogImportRepository.findLatestCompletedAt()).willReturn(null);
+        givenCatalog(catalogOf(3));
+
+        AttractionListResponse response = attractionService.search(
+                sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20));
+
+        assertThat(response.collectedAt()).isEqualTo(CATALOG_CHANGED_AT);
+        // 이력이 없다고 공급자로 내려가지 않는다. 카탈로그가 비어 있는 것과 다르다.
+        assertThat(response.items()).hasSize(3);
+        verifyNoInteractions(cacheService);
+    }
+
+    @Test
+    @DisplayName("카탈로그가 비어 있으면 적재 이력이 있어도 공급자 기준 시점을 쓴다")
+    void providerFallbackKeepsProviderCollectedAt() {
+        given(attractionRepository.findLatestCatalogChangeAt()).willReturn(null);
+        givenProviderPage(providerItem("9001", "속초해변"));
+
+        AttractionListResponse response = attractionService.search(
+                sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20));
+
+        assertThat(response.collectedAt()).isEqualTo(PROVIDER_COLLECTED_AT);
     }
 
     // --- 정렬을 적용했는지 (#65) --------------------------------------------------
