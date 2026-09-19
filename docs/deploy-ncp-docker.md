@@ -448,8 +448,11 @@ docker compose -f docker-compose.prod.yml --env-file .env.docker exec db mysql -
 **순서가 있습니다.**
 
 ```
-카탈로그  →  파일 적재(주차장·TMAP·입장객)  →  언급량
+카탈로그  →  파일 적재(주차장·TMAP·입장객)  →  장소 매핑  →  언급량
 ```
+
+장소 매핑은 TMAP·입장객 적재가 남긴 미매칭 이름을 보므로 그 뒤에 옵니다. 언급량과는
+서로를 보지 않으니 앞이든 뒤든 상관없습니다.
 
 카탈로그가 맨 앞인 이유는 나머지가 그것을 딛고 서기 때문입니다. 언급량 수집은 카탈로그를
 순회하고, TMAP·입장객은 카탈로그의 `contentId` 에 매칭됩니다. 카탈로그가 비어 있으면
@@ -468,7 +471,13 @@ docker compose -f docker-compose.prod.yml --env-file .env.docker \
 적재하고, 그 파일을 컨테이너에 넣어 줘야 해서 명령 모양이 다릅니다. **8-2** 를 보세요.
 
 ```bash
-# 3. 마지막이 언급량. 카탈로그 수천 곳을 도므로 오래 걸립니다.
+# 3. 그다음 장소 매핑. 원천 이름을 카카오로 찾아 카탈로그에 잇습니다. 8-2-4 를 보세요.
+docker compose -f docker-compose.prod.yml --env-file .env.docker \
+  run --rm app --job=place-mapping
+```
+
+```bash
+# 4. 마지막이 언급량. 카탈로그 수천 곳을 도므로 오래 걸립니다.
 docker compose -f docker-compose.prod.yml --env-file .env.docker \
   run --rm app --job=mention
 ```
@@ -601,6 +610,39 @@ docker compose -f docker-compose.prod.yml --env-file .env.docker \
 
 **이 세 작업은 스케줄로 돌릴 수 없습니다.** 사람이 파일을 내려받아 서버에 올려야 하기
 때문입니다. 스케줄이 있는 작업은 언급량과 카탈로그뿐입니다(8-3).
+
+**8-2-4. 장소 매핑을 돌린다**
+
+파일 적재가 끝나면 장소 매핑을 한 번 돌립니다. 원본 파일이 필요 없어 `-v` 마운트도
+없습니다. `.env.docker` 에 `KAKAO_REST_API_KEY` 가 있어야 하며, 비어 있으면 호출을 한
+번도 내지 않고 이유를 남기고 끝냅니다.
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.docker \
+  run --rm app --job=place-mapping
+```
+
+```
+장소 매핑 결과: source=tmap, 대상=283, 건너뜀=0, 호출=283, 확정=97(표기차이=34),
+저신뢰=103, 미매칭=83, 카탈로그밖=6, 미상=178
+장소 매핑 매칭률: source=tmap, 매칭률 제외 전 354/540 (65.6%), 제외 후 354/534 (66.3%),
+분모에서 뺀 행=6
+```
+
+`--source` 를 주지 않으면 `tmap` → `visitor-stats` → `related` 를 차례로 돕니다. 강원
+전체가 카카오 호출 약 655회로, 하루 한도 100,000회의 0.7% 입니다. 확정한 이름은 다음
+실행에서 건너뜁니다.
+
+> **확정이 나오면 TMAP·입장객을 다시 적재해야 반영됩니다.** 이 배치는 판정을 표에 남길
+> 뿐 스냅샷을 고치지 않습니다. 재적재를 잊는 것이 조용한 실패라서, 배치가 확정 건수와
+> 함께 다시 돌릴 명령을 로그에 적습니다. 연관 장소(`related`)는 조회 시점에 표를 보므로
+> 재적재가 필요 없습니다.
+
+확정이 나왔다면 **8-2-2** 의 TMAP·입장객 적재를 한 번 더 돌립니다.
+
+매칭률은 **제외 전과 후를 함께** 봅니다. 제외 후만 보면 실제로 더 이어서 오른 것인지
+분모를 줄여서 오른 것인지 구별할 수 없습니다. 분류 규칙은 `README.md` 의
+**미매칭 재분류** 절에 있습니다.
 
 ### 8-3. 월간 스케줄을 켠다
 
