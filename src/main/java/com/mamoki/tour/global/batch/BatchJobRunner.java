@@ -18,6 +18,8 @@ import com.mamoki.tour.domain.attraction.importer.AttractionCatalogImportResult;
 import com.mamoki.tour.domain.attraction.importer.AttractionCatalogImportService;
 import com.mamoki.tour.domain.mention.service.OnlineMentionCollectResult;
 import com.mamoki.tour.domain.mention.service.OnlineMentionCollector;
+import com.mamoki.tour.domain.parking.importer.ParkingCatalogImportResult;
+import com.mamoki.tour.domain.parking.importer.ParkingCatalogImportService;
 import com.mamoki.tour.domain.tmaprank.importer.TmapRankImportResult;
 import com.mamoki.tour.domain.tmaprank.importer.TmapRankImportService;
 import com.mamoki.tour.domain.visitorstats.importer.VisitorStatsImportResult;
@@ -31,6 +33,7 @@ import com.mamoki.tour.domain.visitorstats.importer.VisitorStatsImportService;
  * java -jar app.jar --job=mention --month=202609
  * java -jar app.jar --job=tmap --dir=sample --downloaded-on=2026-09-06
  * java -jar app.jar --job=visitor-stats --file=sample/입장객.xls --downloaded-on=2026-09-18
+ * java -jar app.jar --job=parking-catalog --file=sample/전국주차장정보표준데이터.csv --downloaded-on=2026-09-19
  * </pre>
  *
  * <p><b>{@code --job} 이 없으면 아무것도 하지 않는다.</b> 평소 서버 기동에 영향을 주지 않아야
@@ -57,15 +60,18 @@ public class BatchJobRunner implements ApplicationRunner {
     private final OnlineMentionCollector mentionCollector;
     private final TmapRankImportService tmapRankImportService;
     private final VisitorStatsImportService visitorStatsImportService;
+    private final ParkingCatalogImportService parkingCatalogImportService;
 
     public BatchJobRunner(AttractionCatalogImportService catalogImportService,
                           OnlineMentionCollector mentionCollector,
                           TmapRankImportService tmapRankImportService,
-                          VisitorStatsImportService visitorStatsImportService) {
+                          VisitorStatsImportService visitorStatsImportService,
+                          ParkingCatalogImportService parkingCatalogImportService) {
         this.catalogImportService = catalogImportService;
         this.mentionCollector = mentionCollector;
         this.tmapRankImportService = tmapRankImportService;
         this.visitorStatsImportService = visitorStatsImportService;
+        this.parkingCatalogImportService = parkingCatalogImportService;
     }
 
     @Override
@@ -99,6 +105,7 @@ public class BatchJobRunner implements ApplicationRunner {
             case MENTION -> runMention(args);
             case TMAP -> runTmap(args);
             case VISITOR_STATS -> runVisitorStats(args);
+            case PARKING_CATALOG -> runParkingCatalog(args);
         }
     }
 
@@ -143,6 +150,18 @@ public class BatchJobRunner implements ApplicationRunner {
         log.info("입장객통계 적재 완료: version={}, 공표월={}, 행={}, 매칭={}",
                 result.snapshot().getVersion(), result.snapshot().getPublishedMonth(),
                 result.totalRows(), result.matchedRows());
+    }
+
+    private void runParkingCatalog(ApplicationArguments args) {
+        Path file = Path.of(required(args, FILE_OPTION,
+                "전국주차장정보표준데이터 CSV 경로를 --file 로 지정하세요."));
+
+        ParkingCatalogImportResult result =
+                parkingCatalogImportService.importFrom(file, downloadedOn(args));
+
+        log.info("주차장 표준데이터 적재 완료: version={}, 기준일={}, 행={}, 좌표없음={}, 시·군={}",
+                result.snapshot().getVersion(), result.snapshot().getDataBaseDate(),
+                result.totalRows(), result.withoutCoordinates(), result.districtCount());
     }
 
     /** 내려받은 날을 주지 않으면 오늘로 본다. 파일을 받은 날과 적재한 날이 같은 경우가 대부분이다. */
