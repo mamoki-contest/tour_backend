@@ -4,7 +4,7 @@
 
 ## 로컬 개발 환경
 
-### 1. MySQL 스키마 생성
+### 1. MySQL 스키마·계정 생성
 
 개발용과 테스트용 스키마를 나눕니다. 테스트는 `ddl-auto: create-drop` 이라
 대상 스키마의 테이블을 매번 삭제하므로, 반드시 분리해야 합니다.
@@ -12,11 +12,23 @@
 ```sql
 CREATE DATABASE tour CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE DATABASE tour_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- .env.example 이 기본값으로 쓰는 계정. 도커로 띄울 때(docker-compose.yml)
+-- 만들어지는 계정과 같은 이름이라, 두 환경에서 설정이 갈리지 않습니다.
+CREATE USER 'tour'@'%' IDENTIFIED BY 'tour';
+GRANT ALL PRIVILEGES ON `tour`.* TO 'tour'@'%';
+-- tour_test, tour_test_62 … 를 한 번에 허용합니다(`\_` 는 밑줄 그대로라는 뜻).
+GRANT ALL PRIVILEGES ON `tour\_test%`.* TO 'tour'@'%';
 ```
 
-테스트 스키마 이름은 `tour_test` 로 시작하기만 하면 됩니다.
+이미 쓰던 계정이 있다면 만들지 않고 `.env` 의 `DB_USERNAME`·`DB_PASSWORD` 를 그 계정으로
+바꿔도 됩니다. 다만 `.env.example` 을 손대지 않은 사람이 곧바로 띄울 수 있도록,
+기본값은 위 계정으로 맞춰 둡니다.
+
+테스트 스키마 이름은 `tour_test` 이거나 `tour_test_` 로 시작해야 합니다.
 여러 갈래를 동시에 돌릴 때는 `tour_test_62` 처럼 접미어를 붙여 나누고
-`TEST_DB_NAME` 으로 가리킵니다.
+`TEST_DB_NAME` 으로 가리킵니다. 새 스키마를 만들 때는 `CREATE DATABASE` 권한이 있는
+계정(보통 `root`)으로 만듭니다 — 위 `GRANT` 는 이미 있는 스키마 안에서만 씁니다.
 
 ### 2. 환경변수 설정
 
@@ -32,25 +44,37 @@ cp .env.example .env
 같은 규칙이 적용됩니다. 스프링 기본 동작은 빈 문자열도 "설정된 값"으로 보기 때문에,
 `BlankValueEnvironmentPostProcessor` 가 바인딩 전에 빈 값을 지워 이 규칙을 만듭니다.
 
-그래서 `.env.example` 을 그대로 복사해도 앱이 뜹니다. 채워야 하는 것은 DB 접속 정보뿐이고,
+그래서 `.env.example` 을 그대로 복사해도 앱이 뜹니다. 1번의 스키마와 계정만 있으면 되고,
 외부 API 키는 비어 있으면 그 공급자만 정보 없음으로 내려갑니다.
 
-반드시 채우는 값:
+**DB 접속 정보만은 예외로 비워 둘 수 없습니다.** 계정 이름이나 호스트는 비어 있으면 뜻이
+없어서 기본값을 둘 자리가 없습니다. 그래서 `.env.example` 에는 값이 채워져 있고, 지운 채로
+띄우면 기동 초기에 **어느 변수가 비었는지 이름을 대고** 멈춥니다.
+
+```
+다음 환경변수가 비어 있거나 지정되지 않아 기동을 멈췄습니다: DB_USERNAME
+```
+
+값이 쓰이는 자리까지 가도록 두면 해석되지 않은 `${DB_USERNAME}` 이 그대로 MySQL 에
+내려가, 설정 오류가 "`${DB_USERNAME}` 이라는 계정으로 인증 실패" 로 위장됩니다.
+확인은 `RequiredEnvironmentVariables` 가 바인딩 전에 합니다.
+
+반드시 채우는 값 (`.env.example` 에 이미 채워져 있습니다):
 
 | 변수 | 설명 |
 | --- | --- |
 | `DB_HOST` | MySQL 호스트 |
 | `DB_PORT` | MySQL 포트 |
-| `DB_NAME` | 개발용 스키마 (`tour`) |
-| `DB_USERNAME` | 계정. 비우면 기동이 멈춥니다 |
-| `DB_PASSWORD` | 비밀번호. 비밀번호 없는 계정이면 비워 둡니다 |
-| `TEST_DB_NAME` | 테스트용 스키마. `tour_test` 로 시작해야 합니다 |
+| `DB_NAME` | 개발용 스키마 (`tour`). `test` 프로파일에서는 대신 `TEST_DB_NAME` 을 봅니다 |
+| `DB_USERNAME` | 계정 (`tour`). 비우면 이름을 대고 기동이 멈춥니다 |
+| `DB_PASSWORD` | 비밀번호 (`tour`). 비밀번호 없는 계정이면 비워 둡니다 |
+| `TEST_DB_NAME` | 테스트용 스키마. `tour_test` 이거나 `tour_test_` 로 시작해야 합니다 |
 
 발급받아 채우는 키 (비우면 해당 공급자만 정보 없음):
 
 | 변수 | 설명 |
 | --- | --- |
-| `KOR_SERVICE_KEY` | 공공데이터포털 Encoding 키. 5개 서비스가 공유합니다 |
+| `KOR_SERVICE_KEY` | 공공데이터포털 Encoding 키. 6개 서비스가 공유합니다 (서비스마다 활용신청은 따로) |
 | `NAVER_API_HUB_KEY_ID`, `NAVER_API_HUB_KEY` | NAVER API HUB 검색 API |
 | `KAKAO_REST_API_KEY` | 카카오 Local REST API |
 | `ITS_API_KEY` | 국가교통정보센터. 공공데이터포털과 무관한 별도 포털입니다 |
@@ -59,7 +83,6 @@ cp .env.example .env
 
 | 변수 | 기본값 | 언제 지정하나 |
 | --- | --- | --- |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` | 프론트 배포 주소를 허용할 때 (쉼표 구분) |
 | `KOR_SERVICE_BASE_URL` | `https://apis.data.go.kr/B551011/KorService2` | HTTPS 가 막힌 환경에서 http 로 |
 | `LOCGO_HUB_BASE_URL` | `https://apis.data.go.kr/B551011/LocgoHubTarService1` | 〃 |
 | `TATS_CNCTR_RATE_BASE_URL` | `https://apis.data.go.kr/B551011/TatsCnctrRateService` | 〃 |
@@ -71,6 +94,17 @@ cp .env.example .env
 | `NAVER_QUERY_SUFFIX` | 없음 (붙이지 않음) | 검색어 뒤에 말을 붙일 때 |
 | `NAVER_AMBIGUOUS_RATIO` | `0.10` | 이름 변별력 기준을 바꿀 때 |
 | `ITS_HALF_SPAN` | `0.005` (약 555m) | 교통정보를 볼 범위를 바꿀 때 |
+
+비우면 그 기능이 꺼지는 값:
+
+| 변수 | 비웠을 때 | 언제 지정하나 |
+| --- | --- | --- |
+| `CORS_ALLOWED_ORIGINS` | CORS 매핑을 등록하지 않습니다 (브라우저에서 다른 출처로 부를 수 없음) | 프론트 주소를 허용할 때 (쉼표 구분) |
+
+이 값만은 `application.yaml` 에 기본값이 없습니다. 빈 값이 "지정하지 않은 것" 이라
+기본값을 두면 **환경변수만으로 CORS 를 끌 방법이 사라지기** 때문입니다. `DB_PASSWORD` 와
+같은 개별 예외입니다. 로컬 개발용 `http://localhost:5173` 은 `.env.example` 에만 적혀 있어
+`.env` 를 복사한 사람에게만 적용됩니다.
 
 그 밖의 세부 설정(페이지 크기, 최대 페이지 수, 타임아웃 등)도 `application.yaml` 에
 기본값이 있으며 같은 방식으로 환경변수로 덮을 수 있습니다.
@@ -166,12 +200,19 @@ java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=place-mapping --source=tmap
 | 프로파일 | 대상 스키마 | `ddl-auto` | 비고 |
 | --- | --- | --- | --- |
 | `local` (기본) | `tour` | `update` | 로컬 개발 |
-| `test` | `tour_test` 로 시작하는 스키마 | `create-drop` | 테스트 실행 시에만 사용 |
+| `test` | `tour_test` 또는 `tour_test_...` | `create-drop` | 테스트 실행 시에만 사용 |
 | `prod` | AWS RDS | `update` | 환경변수로 접속 정보 주입 |
 
 배포 서버 DB 를 대상으로 테스트를 실행하지 않습니다.
-`TestProfileDatabaseTest` 가 테스트 접속 대상이 `tour_test` 로 시작하는 스키마인지 검증합니다.
+`TestProfileDatabaseTest` 가 테스트 접속 대상이 `tour_test` 이거나 `tour_test_` 로 시작하는
+스키마인지 검증합니다. 구분자 `_` 까지 보기 때문에 `tour_testing_prod` 처럼 이름이 우연히
+같게 시작하는 스키마는 통과하지 못합니다.
 `tour` 나 운영 스키마를 가리키면 테스트가 멈춥니다.
+
+그 확인은 자신이 뜬 `test` 프로파일 컨텍스트만 볼 수 있어서, 프로파일을 빠뜨린 테스트는
+시야에 들어오지 않습니다. `SpringBootTestProfileGuardTest` 가 컴파일된 테스트 클래스를 훑어
+`@ActiveProfiles("test")` 없는 `@SpringBootTest` 를 잡습니다. 새 통합 테스트를 쓸 때는
+`@SpringBootTest` 와 `@ActiveProfiles("test")` 를 함께 붙입니다.
 
 ## 규칙
 
@@ -767,6 +808,11 @@ VALUES ('TMAP', '강원랜드카지노', '강원랜드카지노', '51770', '<카
 | `DataLabService` | 지역별 방문자수 | B551011 |
 | `GNitsTrafficInfoService_1.0` | 강릉시 실시간 주차(`getParkInfo`·`getParkRltm`) | 4201000 |
 | 카카오 로컬 REST API | 공급자 간 장소 매핑(지도 표시 아님) | 없음 (공공데이터포털이 아님) |
+
+**`GNitsTrafficInfoService_1.0` 은 활용신청을 따로 해야 합니다.** 키 하나를 여섯 서비스가
+공유하지만 권한은 서비스마다 붙습니다. 이 서비스는 표에서 맨 아래 한 줄이라 빠뜨리기 쉽고,
+빠뜨려도 오류가 아니라 상세 응답의 실시간 주차가 조용히 정보 없음이 됩니다. data.go.kr
+15140011 에서 신청하며 자동승인이라 즉시 열립니다.
 
 **공공데이터포털 서비스 중에서는 강릉시 교통정보 조회서비스만 기관코드가 다릅니다.** 키는 같지만 경로가 달라
 `GN_ITS_BASE_URL` 을 따로 둡니다. 강원 18개 시·군을 전수 조사한 결과 실시간 주차
