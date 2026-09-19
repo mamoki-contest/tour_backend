@@ -37,6 +37,19 @@ public interface VisitorStatsEntryRepository extends JpaRepository<VisitorStatsE
             """)
     List<VisitorStatsEntry> findUnmatchedBySnapshot(@Param("snapshot") VisitorStatsSnapshot snapshot);
 
+    /**
+     * 활성 스냅샷에서 확정 매칭된 관광지 식별자를 행마다 하나씩 가져온다.
+     *
+     * <p>장소 매핑 배치(#72)가 매칭률의 분자를 세고, 이미 값이 붙은 관광지에 두 번째 행을
+     * 잇지 않으려고 쓴다. 한 관광지에 두 행이 붙으면 조회가 둘 중 아무거나 보여 준다.
+     */
+    @Query("""
+            select e.contentId from VisitorStatsEntry e
+            where e.snapshot = :snapshot
+              and e.matchStatus = com.mamoki.tour.global.enums.CatalogMatchStatus.MATCHED
+            """)
+    List<String> findMatchedContentIds(@Param("snapshot") VisitorStatsSnapshot snapshot);
+
     long countBySnapshot(VisitorStatsSnapshot snapshot);
 
     void deleteBySnapshot(VisitorStatsSnapshot snapshot);

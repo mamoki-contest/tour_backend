@@ -192,6 +192,12 @@ tour:
     # 한 번의 실행에서 낼 수 있는 카카오 호출 수의 상한.
     # 원천 이름 수가 예상 밖으로 늘어도 하루 한도를 한 번에 소진하지 않게 막는다.
     max-calls-per-run: ${PLACE_MAPPING_MAX_CALLS:20000}
+    # 카카오가 원천 이름을 알아보지 못한 채 대표 이름만으로 이을 때의 거리 상한 배수(#78).
+    #
+    # 그 갈래에서는 카카오 관련도 1위가 원천 이름과 아무 관계가 없을 수 있다. 이름이
+    # 카탈로그에 유일하다는 것은 그 사실을 반증하지 못하므로 거리도 함께 본다.
+    # 기본 5배(경계 300m 기준 1,500m). #68 이 이 갈래로 이은 대표 사례가 469m 다.
+    name-boundary-multiplier: ${PLACE_MAPPING_NAME_BOUNDARY_MULTIPLIER:5}
   cors:
     # Vercel 배포 출처만 허용한다. 쉼표로 구분해 환경변수로 주입한다.
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}

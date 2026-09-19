@@ -190,4 +190,19 @@ class PlaceMatcherTest {
         assertThat(placeMatcher.index(MappingSource.TMAP).match("강릉시", "강원랜드카지노"))
                 .contains("125266");
     }
+
+    @Test
+    @DisplayName("한 관광지에 확정 행이 둘이면 별칭을 하나도 쓰지 않는다 (#84)")
+    void doesNotUseAliasesWhenOneAttractionHasTwoConfirmedRows() {
+        // 매핑 표의 유니크 키는 (원천, 이름, 시·군) 이라 서로 다른 이름 둘이 같은 관광지로
+        // 확정되는 것을 막지 않는다. 둘 다 별칭으로 쓰면 연관 목록이 두 기준 관광지의
+        // 합집합이 되어, 그 관광지와 상관없는 곳이 섞여 나온다.
+        saveMapping(MappingSource.RELATED_PLACE, "화진포해수욕장", GANGNEUNG, "126508",
+                PlaceMappingStatus.CONFIRMED, PlaceMatchMethod.NORMALIZED);
+        saveMapping(MappingSource.RELATED_PLACE, "통일전망대", GANGNEUNG, "126508",
+                PlaceMappingStatus.CONFIRMED, PlaceMatchMethod.KAKAO_COORD);
+
+        assertThat(placeMatcher.normalizedAliases(MappingSource.RELATED_PLACE, "126508", "화진포"))
+                .containsExactly(PlaceNameNormalizer.normalize("화진포"));
+    }
 }

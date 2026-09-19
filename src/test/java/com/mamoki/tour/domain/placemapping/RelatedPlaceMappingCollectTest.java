@@ -114,7 +114,7 @@ class RelatedPlaceMappingCollectTest {
         // 이름으로 이미 이어지는 오죽헌은 대상이 아니고, 경포해수욕장만 판정 대상이다.
         saveAttraction("126508", "오죽헌");
 
-        List<UnmatchedPlaceName> names = collector().collect();
+        List<UnmatchedPlaceName> names = collector().collect().names();
 
         assertThat(names).extracting(UnmatchedPlaceName::sourceName)
                 .containsExactly("경포해수욕장");
@@ -130,7 +130,7 @@ class RelatedPlaceMappingCollectTest {
     @Test
     @DisplayName("같은 기준 관광지가 여러 행에 나와도 한 번만 판정 대상이 된다")
     void collectsEachBaseNameOnce() {
-        List<UnmatchedPlaceName> names = collector().collect();
+        List<UnmatchedPlaceName> names = collector().collect().names();
 
         assertThat(names).extracting(UnmatchedPlaceName::sourceName)
                 .containsExactly("오죽헌", "경포해수욕장");

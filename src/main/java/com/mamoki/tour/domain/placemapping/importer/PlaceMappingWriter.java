@@ -48,31 +48,13 @@ public class PlaceMappingWriter {
         }
 
         if (existing != null) {
-            existing.redecide(decision.contentId(), decision.method(), decision.confidence(),
-                    decision.kakaoPlaceId(), decision.kakaoPlaceName(),
-                    decision.kakaoLatitude(), decision.kakaoLongitude(),
-                    decision.distanceMeters(), decision.status(), decision.reason(), decidedAt);
+            existing.redecide(decision, decidedAt);
 
             return true;
         }
 
-        placeMappingRepository.save(PlaceMapping.builder()
-                .source(source)
-                .sourceName(name.sourceName())
-                .normalizedName(name.normalizedName())
-                .lawdCode(name.lawdCode())
-                .contentId(decision.contentId())
-                .method(decision.method())
-                .confidence(decision.confidence())
-                .kakaoPlaceId(decision.kakaoPlaceId())
-                .kakaoPlaceName(decision.kakaoPlaceName())
-                .kakaoLatitude(decision.kakaoLatitude())
-                .kakaoLongitude(decision.kakaoLongitude())
-                .distanceMeters(decision.distanceMeters())
-                .status(decision.status())
-                .reason(decision.reason())
-                .decidedAt(decidedAt)
-                .build());
+        placeMappingRepository.save(PlaceMapping.decided(source, name.sourceName(),
+                name.normalizedName(), name.lawdCode(), decision, decidedAt));
 
         return true;
     }

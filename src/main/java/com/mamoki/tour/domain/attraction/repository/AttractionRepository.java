@@ -18,8 +18,12 @@ public interface AttractionRepository extends JpaRepository<Attraction, Long> {
     /**
      * 지역까지 함께 읽는다. 배치처럼 트랜잭션 밖에서 지역명을 쓰는 곳에서는
      * 지연 로딩이 터지므로 이 메서드를 쓴다.
+     *
+     * <p>순서를 못 박는다(#84). 매칭 색인이 같은 이름 중 먼저 담긴 쪽을 쓰는데, 순서를
+     * 정하지 않으면 DB 가 돌려주는 순서에 따라 승자가 바뀐다. 재적재나 인덱스 변화만으로
+     * 어제와 다른 관광지에 TMAP 순위가 붙는데, 값이 그럴듯해 아무도 알아채지 못한다.
      */
-    @Query("select a from Attraction a left join fetch a.regionCode")
+    @Query("select a from Attraction a left join fetch a.regionCode order by a.contentId")
     List<Attraction> findAllWithRegion();
 
     /**
@@ -45,6 +49,16 @@ public interface AttractionRepository extends JpaRepository<Attraction, Long> {
      */
     @Query("select max(a.modifiedAt) from Attraction a")
     LocalDateTime findLatestCatalogChangeAt();
+
+    /**
+     * 카탈로그의 관광지명만 전부 읽는다.
+     *
+     * <p>미매칭 재분류(#72)가 "카탈로그가 이 종류를 실제로 담고 있는가" 를 확인하는 데 쓴다.
+     * 엔티티를 통째로 읽으면 4천여 행을 영속성 컨텍스트에 올리는데, 여기서 필요한 것은
+     * 이름뿐이다.
+     */
+    @Query("select a.name from Attraction a where a.name is not null")
+    List<String> findAllNames();
 
     /** 개인 컬렉션 재조회(#9)가 사용하는 배치 조회. */
     List<Attraction> findAllByContentIdIn(Collection<String> contentIds);

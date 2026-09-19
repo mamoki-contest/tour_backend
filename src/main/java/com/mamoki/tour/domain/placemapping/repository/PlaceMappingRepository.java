@@ -29,6 +29,7 @@ public interface PlaceMappingRepository extends JpaRepository<PlaceMapping, Long
             where m.source = :source
               and m.status = com.mamoki.tour.domain.placemapping.enums.PlaceMappingStatus.CONFIRMED
               and m.contentId is not null
+            order by m.contentId, m.normalizedName
             """)
     List<PlaceMapping> findConfirmedBySource(@Param("source") MappingSource source);
 
@@ -38,6 +39,7 @@ public interface PlaceMappingRepository extends JpaRepository<PlaceMapping, Long
             where m.source = :source
               and m.contentId = :contentId
               and m.status = com.mamoki.tour.domain.placemapping.enums.PlaceMappingStatus.CONFIRMED
+            order by m.normalizedName
             """)
     List<PlaceMapping> findConfirmedBySourceAndContentId(@Param("source") MappingSource source,
                                                          @Param("contentId") String contentId);
