@@ -14,7 +14,7 @@ CREATE DATABASE tour CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE DATABASE tour_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-테스트 스키마 이름은 `tour_test` 로 시작하기만 하면 됩니다.
+테스트 스키마 이름은 `tour_test` 이거나 `tour_test_` 로 시작해야 합니다.
 여러 갈래를 동시에 돌릴 때는 `tour_test_62` 처럼 접미어를 붙여 나누고
 `TEST_DB_NAME` 으로 가리킵니다.
 
@@ -44,7 +44,7 @@ cp .env.example .env
 | `DB_NAME` | 개발용 스키마 (`tour`) |
 | `DB_USERNAME` | 계정. 비우면 기동이 멈춥니다 |
 | `DB_PASSWORD` | 비밀번호. 비밀번호 없는 계정이면 비워 둡니다 |
-| `TEST_DB_NAME` | 테스트용 스키마. `tour_test` 로 시작해야 합니다 |
+| `TEST_DB_NAME` | 테스트용 스키마. `tour_test` 이거나 `tour_test_` 로 시작해야 합니다 |
 
 발급받아 채우는 키 (비우면 해당 공급자만 정보 없음):
 
@@ -161,11 +161,13 @@ java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=place-mapping --source=tmap
 | 프로파일 | 대상 스키마 | `ddl-auto` | 비고 |
 | --- | --- | --- | --- |
 | `local` (기본) | `tour` | `update` | 로컬 개발 |
-| `test` | `tour_test` 로 시작하는 스키마 | `create-drop` | 테스트 실행 시에만 사용 |
+| `test` | `tour_test` 또는 `tour_test_...` | `create-drop` | 테스트 실행 시에만 사용 |
 | `prod` | AWS RDS | `update` | 환경변수로 접속 정보 주입 |
 
 배포 서버 DB 를 대상으로 테스트를 실행하지 않습니다.
-`TestProfileDatabaseTest` 가 테스트 접속 대상이 `tour_test` 로 시작하는 스키마인지 검증합니다.
+`TestProfileDatabaseTest` 가 테스트 접속 대상이 `tour_test` 이거나 `tour_test_` 로 시작하는
+스키마인지 검증합니다. 구분자 `_` 까지 보기 때문에 `tour_testing_prod` 처럼 이름이 우연히
+같게 시작하는 스키마는 통과하지 못합니다.
 `tour` 나 운영 스키마를 가리키면 테스트가 멈춥니다.
 
 ## 규칙

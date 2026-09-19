@@ -28,6 +28,14 @@ class TestSchemaNamesTest {
     }
 
     @Test
+    @DisplayName("이름이 tour_test 로 시작하기만 하는 스키마는 막는다")
+    void rejectsSchemaThatMerelyStartsWithTestName() {
+        assertThat(TestSchemaNames.isTestSchema("tour_testing_prod")).isFalse();
+        assertThat(TestSchemaNames.isTestSchema("tour_tests")).isFalse();
+        assertThat(TestSchemaNames.isTestSchema("tour_test2")).isFalse();
+    }
+
+    @Test
     @DisplayName("스키마를 알 수 없으면 막는다")
     void rejectsUnknownSchema() {
         assertThat(TestSchemaNames.isTestSchema(null)).isFalse();
