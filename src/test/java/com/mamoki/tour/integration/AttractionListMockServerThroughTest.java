@@ -13,6 +13,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 
+import javax.sql.DataSource;
+
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -23,6 +25,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.web.client.ExpectedCount;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -47,6 +50,10 @@ import com.mamoki.tour.domain.cache.repository.ExternalApiCacheRepository;
  *
  * <p>네 갈래(성공·캐시 적중·STALE·NO_DATA)는 {@code AttractionListThroughTest} 가 이미
  * 덮고 있다. 여기서는 겹치지 않게 <b>요청의 모양</b>과 공급자 장애 한 갈래만 본다.
+ *
+ * <p>{@link TestBean} 이 컨텍스트 캐시 키를 바꾸므로 이 테스트도 컨텍스트를 하나 더 만든다.
+ * 그래서 스키마도 전용으로 쓴다({@link Schema}) — 자세한 이유는
+ * {@link ThroughTestSchemaInitializer} 에 적었다(#86).
  */
 @SpringBootTest(properties = {
         "tour.api.kor-service.base-url=" + AttractionListMockServerThroughTest.BASE_URL,
@@ -54,7 +61,15 @@ import com.mamoki.tour.domain.cache.repository.ExternalApiCacheRepository;
 })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@ContextConfiguration(initializers = AttractionListMockServerThroughTest.Schema.class)
 class AttractionListMockServerThroughTest {
+
+    /** 다른 관통 테스트와도 스키마를 나눈다. 병렬 실행에서는 둘이 동시에 뜰 수 있다. */
+    static class Schema extends ThroughTestSchemaInitializer {
+        Schema() {
+            super("_through_mock");
+        }
+    }
 
     /** {@code KOR_SERVICE_BASE_URL} 오버라이드가 스택을 지나서도 지켜지는지 함께 본다. */
     static final String BASE_URL = "https://stub.invalid/B551011/KorService2";
@@ -86,10 +101,25 @@ class AttractionListMockServerThroughTest {
     @Autowired
     private ExternalApiCacheRepository cacheRepository;
 
+    @Autowired
+    private DataSource dataSource;
+
     @BeforeEach
     void reset() {
         cacheRepository.deleteAll();
         SERVER.reset();
+    }
+
+    @Test
+    @DisplayName("다른 테스트와 스키마를 공유하지 않는다")
+    void usesItsOwnSchema() throws Exception {
+        try (java.sql.Connection connection = dataSource.getConnection()) {
+            String schema = connection.getCatalog();
+
+            assertThat(schema)
+                    .withFailMessage("관통 테스트는 전용 스키마를 써야 한다. 지금 접속한 곳: %s", schema)
+                    .endsWith("_through_mock");
+        }
     }
 
     @Test
