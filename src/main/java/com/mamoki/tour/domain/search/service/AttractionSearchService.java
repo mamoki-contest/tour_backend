@@ -20,8 +20,8 @@ import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
 import com.mamoki.tour.domain.search.dto.AttractionSearchResponse;
 import com.mamoki.tour.domain.search.dto.ThemeView;
 import com.mamoki.tour.domain.search.enums.SearchResultType;
-import com.mamoki.tour.domain.search.enums.SupportedTheme;
 import com.mamoki.tour.domain.region.repository.RegionCodeRepository;
+import com.mamoki.tour.domain.search.support.ThemeEntry;
 import com.mamoki.tour.domain.search.support.ThemeResolver;
 import com.mamoki.tour.global.enums.ApiProvider;
 import com.mamoki.tour.global.enums.DataStatus;
@@ -70,26 +70,29 @@ public class AttractionSearchService {
     private final ExternalApiCacheService cacheService;
     private final AttractionService attractionService;
     private final RegionCodeRepository regionCodeRepository;
+    private final ThemeResolver themeResolver;
 
     public AttractionSearchService(KorServiceClient korServiceClient,
                                    ExternalApiCacheService cacheService,
                                    AttractionService attractionService,
-                                   RegionCodeRepository regionCodeRepository) {
+                                   RegionCodeRepository regionCodeRepository,
+                                   ThemeResolver themeResolver) {
         this.korServiceClient = korServiceClient;
         this.cacheService = cacheService;
         this.attractionService = attractionService;
         this.regionCodeRepository = regionCodeRepository;
+        this.themeResolver = themeResolver;
     }
 
     public AttractionSearchResponse search(String query, String sigunguCode, int page, int size) {
-        Optional<SupportedTheme> theme = ThemeResolver.resolve(query);
+        Optional<ThemeEntry> theme = themeResolver.match(query);
 
         return theme.map(matched -> searchTheme(matched, query, sigunguCode, page, size))
                 .orElseGet(() -> searchGeneral(query, sigunguCode, page, size));
     }
 
     /** 지원 테마. 테마의 검색어를 모두 조회해 합친 뒤 자격을 적용한다. */
-    private AttractionSearchResponse searchTheme(SupportedTheme theme, String query,
+    private AttractionSearchResponse searchTheme(ThemeEntry theme, String query,
                                                  String sigunguCode, int page, int size) {
 
         Map<String, AttractionSnapshot> merged = new LinkedHashMap<>();
@@ -145,8 +148,11 @@ public class AttractionSearchService {
      *
      * <p>공급자 키워드 검색은 주소나 개요가 걸려도 결과에 넣어 준다. 그대로 두면 테마와
      * 상관없는 장소가 검증된 추천으로 올라간다.
+     *
+     * <p>자격 토큰이 비어 있으면 아무 장소도 통과하지 못한다. 시드에서 값이 빠졌을 때
+     * 전부 통과시키면 지원 테마 표시가 보증하는 것이 없어지므로 닫는 쪽으로 틀린다.
      */
-    private static boolean isQualified(SupportedTheme theme, AttractionSnapshot snapshot) {
+    private static boolean isQualified(ThemeEntry theme, AttractionSnapshot snapshot) {
         String name = ThemeResolver.normalize(snapshot.name());
 
         if (name == null) {
@@ -155,12 +161,13 @@ public class AttractionSearchService {
 
         return theme.matchTokens().stream()
                 .map(ThemeResolver::normalize)
+                .filter(java.util.Objects::nonNull)
                 .anyMatch(name::contains);
     }
 
     private AttractionSearchResponse respond(SearchResultType resultType, ThemeView appliedTheme,
                                              String appliedQuery, List<AttractionSnapshot> snapshots,
-                                             String query, SupportedTheme theme, DataStatus status,
+                                             String query, ThemeEntry theme, DataStatus status,
                                              LocalDateTime collectedAt, int page, int size) {
 
         List<AttractionResponse> described = snapshots.isEmpty()
@@ -181,14 +188,14 @@ public class AttractionSearchService {
      * <p>보여 줄 것이 있는데 다른 테마를 권하면 결과가 부실하다는 신호로 읽힌다.
      * 이미 적용한 테마는 다시 권하지 않고, 가까운 테마가 없으면 빈 목록으로 둔다.
      */
-    private static List<ThemeView> suggestions(List<AttractionResponse> described,
-                                               String query, SupportedTheme applied) {
+    private List<ThemeView> suggestions(List<AttractionResponse> described,
+                                        String query, ThemeEntry applied) {
         if (!described.isEmpty()) {
             return List.of();
         }
 
-        return ThemeResolver.suggest(query).stream()
-                .filter(candidate -> candidate != applied)
+        return themeResolver.suggest(query).stream()
+                .filter(candidate -> applied == null || candidate.code() != applied.code())
                 .map(ThemeView::of)
                 .toList();
     }

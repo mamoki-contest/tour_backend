@@ -22,7 +22,10 @@ public enum BatchJob {
     TMAP("tmap", "TMAP 검색순위 적재"),
 
     /** 내려받은 주요관광지점 입장객통계 엑셀을 적재한다. */
-    VISITOR_STATS("visitor-stats", "주요관광지점 입장객통계 적재");
+    VISITOR_STATS("visitor-stats", "주요관광지점 입장객통계 적재"),
+
+    /** 내려받은 전국주차장정보표준데이터 CSV 에서 강원 행을 적재한다. */
+    PARKING_CATALOG("parking-catalog", "전국주차장정보표준데이터 적재");
 
     private final String jobName;
     private final String description;

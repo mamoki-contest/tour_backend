@@ -23,6 +23,7 @@ import com.mamoki.tour.domain.visittiming.dto.VisitTiming;
 import com.mamoki.tour.domain.visittiming.dto.VisitTimingDetail;
 import com.mamoki.tour.domain.visittiming.dto.VisitTimingVerdict;
 import com.mamoki.tour.domain.visittiming.enums.DateMode;
+import com.mamoki.tour.domain.visittiming.support.ForecastWindow;
 import com.mamoki.tour.domain.visittiming.support.VisitTimingResolver;
 import com.mamoki.tour.global.enums.ApiProvider;
 import com.mamoki.tour.global.enums.DataStatus;
@@ -41,6 +42,9 @@ import com.mamoki.tour.infra.tatscnctrrate.dto.TatsCnctrRateResponse;
  *
  * <p>공급자 장애는 캐시 계층이 흡수하므로 여기서 예외가 새어 나가지 않는다. 매칭에 실패하거나
  * 예측이 없으면 값을 만들어내지 않고 {@code NO_DATA} 로 남긴다.
+ *
+ * <p>지원 범위는 여기서 정하지 않고 시·군 응답에서 {@link ForecastWindow} 로 이끌어 낸다.
+ * 목록과 상세가 같은 응답에서 같은 창을 받으므로 두 화면의 범위가 갈라지지 않는다.
  *
  * <p>알려진 비용: 캐시가 비어 있는 상태에서 강원 전체를 훑으면 한 요청 안에서 시·군 수만큼
  * 순차 호출이 일어난다. 시·군 수를 줄여 막으면 나머지 관광지가 조용히 정보 없음이 되므로,
@@ -74,7 +78,7 @@ public class VisitTimingService {
     /**
      * @param dateMode  FIXED 면 visitDate 를 그 장소 기준으로 해석하고, FLEXIBLE 이면 한산 예상일을 고른다.
      * @param visitDate FIXED 의 선택일. FLEXIBLE 이면 null.
-     * @param today     지원 범위(오늘부터 30일)의 기준일
+     * @param today     지원 범위를 자를 기준일. 지난 날짜는 범위에 담지 않는다.
      * @return 표준 관광지 식별자 → 날짜 탐색 결과. 목록에 있는 관광지는 모두 담긴다.
      */
     public Map<String, VisitTiming> resolve(List<AttractionSnapshot> attractions,
@@ -84,9 +88,6 @@ public class VisitTimingService {
             return Map.of();
         }
 
-        LocalDate supportedFrom = VisitTimingResolver.supportedFrom(today);
-        LocalDate supportedTo = VisitTimingResolver.supportedTo(today);
-
         Map<String, RegionForecast> byLawdCode = new HashMap<>();
         Map<String, VisitTiming> result = new LinkedHashMap<>();
 
@@ -94,17 +95,19 @@ public class VisitTimingService {
             // lawdCode 는 공급자가 준 두 값을 이어 붙인 것이라 형식이 어긋날 수 있다.
             // 어긋난 값으로 호출을 만들면 캐시 계층이 흡수하지 못하는 예외가 되어 500 이 된다.
             RegionForecast region = isLawdCode(attraction.lawdCode())
-                    ? byLawdCode.computeIfAbsent(attraction.lawdCode(), this::fetchRegionForecast)
-                    : RegionForecast.empty();
+                    ? byLawdCode.computeIfAbsent(attraction.lawdCode(),
+                            code -> fetchRegionForecast(code, today))
+                    : RegionForecast.empty(today);
 
             AttractionForecast forecast = region.match(attraction);
+            ForecastWindow window = region.window();
 
             VisitTimingVerdict verdict = dateMode == DateMode.FIXED
-                    ? VisitTimingResolver.resolveFixed(forecast, visitDate, today)
-                    : VisitTimingResolver.resolveFlexible(forecast, today);
+                    ? VisitTimingResolver.resolveFixed(forecast, visitDate, window)
+                    : VisitTimingResolver.resolveFlexible(forecast, window);
 
             result.put(attraction.contentId(), VisitTiming.of(
-                    dateMode, verdict, supportedFrom, supportedTo,
+                    dateMode, verdict, window.from(), window.to(),
                     region.dataStatus(), region.collectedAt(), TatsCnctrRateItemConverter.SOURCE));
         }
 
@@ -112,28 +115,26 @@ public class VisitTimingService {
     }
 
     /**
-     * 관광지 상세용. 한 장소의 유연 모드 판정과 30일 일별 판정을 함께 돌려준다.
+     * 관광지 상세용. 한 장소의 유연 모드 판정과 지원 범위의 일별 판정을 함께 돌려준다.
      *
      * <p>목록과 같은 캐시·같은 매칭·같은 경계를 쓰므로 상세의 그 날 판정이 목록의 확정 모드
      * 판정과 어긋나지 않는다.
      */
     public VisitTimingDetail resolveDetail(AttractionSnapshot attraction, LocalDate today) {
-        LocalDate supportedFrom = VisitTimingResolver.supportedFrom(today);
-        LocalDate supportedTo = VisitTimingResolver.supportedTo(today);
-
         RegionForecast region = isLawdCode(attraction.lawdCode())
-                ? fetchRegionForecast(attraction.lawdCode())
-                : RegionForecast.empty();
+                ? fetchRegionForecast(attraction.lawdCode(), today)
+                : RegionForecast.empty(today);
 
         AttractionForecast forecast = region.match(attraction);
+        ForecastWindow window = region.window();
 
         VisitTiming summary = VisitTiming.of(
                 DateMode.FLEXIBLE,
-                VisitTimingResolver.resolveFlexible(forecast, today),
-                supportedFrom, supportedTo,
+                VisitTimingResolver.resolveFlexible(forecast, window),
+                window.from(), window.to(),
                 region.dataStatus(), region.collectedAt(), TatsCnctrRateItemConverter.SOURCE);
 
-        return new VisitTimingDetail(summary, VisitTimingResolver.resolveDaily(forecast, today));
+        return new VisitTimingDetail(summary, VisitTimingResolver.resolveDaily(forecast, window));
     }
 
     /**
@@ -144,7 +145,7 @@ public class VisitTimingService {
      * 많을 때를 대비해 페이지 수에 상한을 둔다. 상한에서 잘린 관광지는 값을 지어내지 않고
      * 매칭되지 않은 채 정보 없음으로 남는다.
      */
-    private RegionForecast fetchRegionForecast(String lawdCode) {
+    private RegionForecast fetchRegionForecast(String lawdCode, LocalDate today) {
         List<TatsCnctrRateItem> items = new ArrayList<>();
         DataStatus status = null;
         LocalDateTime collectedAt = null;
@@ -181,10 +182,11 @@ public class VisitTimingService {
         }
 
         if (status == null || status == DataStatus.NO_DATA || items.isEmpty()) {
-            return RegionForecast.empty();
+            return RegionForecast.empty(today);
         }
 
-        return RegionForecast.of(TatsCnctrRateItemConverter.convertAll(items), status, collectedAt);
+        return RegionForecast.of(
+                TatsCnctrRateItemConverter.convertAll(items), status, collectedAt, today);
     }
 
     private CachedResponse fetchPage(String lawdCode, int pageNo) {
@@ -226,20 +228,26 @@ public class VisitTimingService {
     }
 
     /**
-     * 시·군 하나의 예측과 그 데이터 상태.
+     * 시·군 하나의 예측과 그 데이터 상태, 그리고 그 응답이 실제로 다룬 날짜 범위.
      *
      * <p>공급자가 관광지 식별자를 주지 않아 정규화한 이름으로 찾고, 양쪽에 좌표가 있으면
      * 거리로 확인한다. 이름이 같아도 좌표가 멀면 다른 장소로 보고 예측을 붙이지 않는다.
+     *
+     * <p>지원 범위는 장소가 아니라 시·군 단위다. 목록과 상세가 같은 응답에서 같은 창을
+     * 받아 쓰므로 두 화면의 지원 범위가 갈라지지 않는다.
      */
     private record RegionForecast(Map<String, AttractionForecast> byNormalizedName,
-                                  DataStatus dataStatus, LocalDateTime collectedAt) {
+                                  DataStatus dataStatus, LocalDateTime collectedAt,
+                                  ForecastWindow window) {
 
-        private static RegionForecast empty() {
-            return new RegionForecast(Map.of(), DataStatus.NO_DATA, null);
+        private static RegionForecast empty(LocalDate today) {
+            return new RegionForecast(
+                    Map.of(), DataStatus.NO_DATA, null, ForecastWindow.nominal(today));
         }
 
         private static RegionForecast of(List<AttractionForecast> forecasts,
-                                         DataStatus dataStatus, LocalDateTime collectedAt) {
+                                         DataStatus dataStatus, LocalDateTime collectedAt,
+                                         LocalDate today) {
 
             Map<String, AttractionForecast> byNormalizedName = new HashMap<>();
 
@@ -249,7 +257,8 @@ public class VisitTimingService {
                 }
             }
 
-            return new RegionForecast(byNormalizedName, dataStatus, collectedAt);
+            return new RegionForecast(byNormalizedName, dataStatus, collectedAt,
+                    ForecastWindow.of(forecasts, today));
         }
 
         private AttractionForecast match(AttractionSnapshot attraction) {
