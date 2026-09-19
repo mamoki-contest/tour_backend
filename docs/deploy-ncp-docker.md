@@ -413,15 +413,106 @@ docker image prune -f
 
 **`data.sql` 은 매 기동마다 실행됩니다.** `ON DUPLICATE KEY UPDATE` 라서 중복 적재되지 않습니다.
 
-**온라인 언급량·TMAP 순위는 수집·적재를 따로 돌려야 채워집니다.** 자동 실행되지 않습니다.
+**온라인 언급량·TMAP 순위는 수집·적재를 따로 돌려야 채워집니다.** 기본은 자동 실행되지 않습니다.
 비어 있으면 `sort=ONLINE_MENTION_DESC` 가 공급자 순서를 그대로 쓰고
-각 항목이 `NOT_COLLECTED` 로 내려갑니다.
+각 항목의 `onlineMention.status` 가 `COLLECTION_FAILED` 로 내려갑니다.
+(`MentionStatus` 의 값은 `COLLECTED` · `AMBIGUOUS` · `UNAVAILABLE` · `COLLECTION_FAILED` 네 가지입니다.
+활성 스냅샷에 그 관광지가 없을 때 `OnlineMentionView.notCollected()` 가 `COLLECTION_FAILED` 를 돌려줍니다.
+언급이 적다는 뜻이 아니라 **값을 얻지 못했다**는 뜻이라, `0` 으로 채우지 않습니다.)
+
+언급량 수집은 **월 1회 스케줄로 돌릴 수 있습니다.** 다음 절을 보세요.
 
 **컨테이너 안에서 DB 를 직접 보려면:**
 
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env.docker exec db mysql -u tour -p tour
 ```
+
+---
+
+## 8. 적재·수집을 서버에서 돌리기
+
+### 8-1. 손으로 한 번 돌린다
+
+스케줄을 켜기 전에 **반드시 손으로 먼저 돌립니다.** 실제 소요 시간과 외부 API 호출량을
+모르는 채로 주기 실행을 켜면, 사람이 보지 않는 새벽에 처음으로 돌게 됩니다.
+
+`run --rm` 은 같은 이미지로 일회성 컨테이너를 띄워 작업만 하고 지웁니다.
+`--no-deps` 를 붙이지 않으므로 DB 컨테이너가 떠 있어야 합니다.
+
+```bash
+# 카탈로그 먼저. 언급량 수집이 이 테이블을 순회합니다.
+docker compose -f docker-compose.prod.yml --env-file .env.docker \
+  run --rm app --job=catalog
+```
+
+```bash
+# 그다음 언급량. 카탈로그 수천 곳을 도므로 오래 걸립니다.
+docker compose -f docker-compose.prod.yml --env-file .env.docker \
+  run --rm app --job=mention
+```
+
+> 작업이 끝나도 컨테이너는 **바로 종료되지 않습니다.** 웹 서버가 함께 뜨기 때문입니다.
+> 로그에 `작업을 시작합니다` / `...완료` 가 찍힌 것을 확인하고 `Ctrl+C` 로 빠져나옵니다.
+> `--rm` 이라 컨테이너는 남지 않습니다.
+
+`--job` 을 주지 않으면 어떤 작업도 실행되지 않습니다. 운영 중인 `tour-app` 컨테이너는
+평소대로 서버로만 돕니다.
+
+### 8-2. 월간 스케줄을 켠다
+
+`.env.docker` 에 넣습니다. **기본은 전부 꺼짐이고, 하나도 켜지 않으면 스케줄러 자체가 뜨지 않습니다.**
+
+| 키 | 기본값 | 뜻 |
+| --- | --- | --- |
+| `BATCH_SCHEDULE_MENTION_ENABLED` | `false` | 온라인 언급량 월간 수집 |
+| `BATCH_SCHEDULE_MENTION_CRON` | `0 0 3 1 * *` (매월 1일 03:00) | 위 작업의 cron (Spring 6자리) |
+| `BATCH_SCHEDULE_CATALOG_ENABLED` | `false` | 관광지 카탈로그 재적재 |
+| `BATCH_SCHEDULE_CATALOG_CRON` | `0 0 2 1 * *` (매월 1일 02:00) | 위 작업의 cron |
+| `BATCH_SCHEDULE_ZONE` | `Asia/Seoul` | cron 을 해석할 시간대 |
+
+**권장: `BATCH_SCHEDULE_MENTION_ENABLED=true` 하나만 켭니다.**
+카탈로그 재적재는 공급자(KorService2) 장애가 잦고 실패하면 사람이 봐야 하는 작업이라,
+분기마다 손으로 돌리는 편이 낫습니다. 둘 다 켠다면 카탈로그가 먼저 끝나도록
+cron 순서를 지켜야 합니다(기본값이 두 시간 차이를 둡니다).
+
+값을 비워 두면 위 기본값을 씁니다. 바꿀 때만 채웁니다.
+
+반영하려면 앱 컨테이너를 다시 만듭니다. 설정 파일만 바뀌었으므로 이미지를 다시 받을 필요는 없습니다.
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.docker up -d --force-recreate app
+```
+
+### 8-3. 켜졌는지 확인한다
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.docker logs app | grep 스케줄
+```
+
+```
+온라인 언급량 수집 스케줄을 등록했습니다: cron=0 0 3 1 * *, zone=Asia/Seoul
+```
+
+**이 줄이 없으면 켜지지 않은 것입니다.** 값이 `true` 인지, 컨테이너를 다시 만들었는지 봅니다.
+
+### 8-4. 알아 둘 것
+
+- **이미 진행 중인 수집이 있으면 건너뜁니다.** `online_mention_snapshot` 에 `IMPORTING` 행이
+  있으면 스케줄이 깨어나도 수집하지 않고 로그에 남깁니다. 손으로 돌린 수집과 겹쳐 같은 키로
+  호출이 두 배가 되는 것을 막기 위해서입니다.
+  수집이 비정상 종료해 `IMPORTING` 이 남았다면 다음 달 스케줄도 건너뛰므로, 상태를 확인하세요.
+
+  ```bash
+  docker compose -f docker-compose.prod.yml --env-file .env.docker exec db \
+    mysql -u tour -p tour -e "SELECT id, version, status, started_at FROM online_mention_snapshot ORDER BY started_at DESC LIMIT 5;"
+  ```
+
+- **실패해도 서버는 죽지 않습니다.** 수집이 실패하면 직전 활성 스냅샷이 그대로 남고,
+  실패한 스냅샷은 `FAILED` 로 이력에만 남습니다. 조회 결과는 이전 달 값을 계속 씁니다.
+
+- **`--job=...` 으로 띄운 일회성 컨테이너에서는 스케줄러가 뜨지 않습니다.**
+  작업 하나를 돌리려고 띄운 프로세스라 스케줄이 낄 자리가 없습니다.
 
 ---
 
@@ -440,6 +531,9 @@ docker compose -f docker-compose.prod.yml --env-file .env.docker exec db mysql -
 | 브라우저에서 8080 이 안 열린다 | ACG 인바운드 8080, 그리고 `docker compose ps` |
 | 날짜 판정이 하루 밀린다 | 컨테이너 안 `date` 가 KST인지. `docker compose exec app date` |
 | 컨테이너가 OOM 으로 죽는다 | 서버 메모리. 4GB 미만이면 MySQL+JVM이 빠듯합니다 |
+| 스케줄을 켰는데 기동 로그에 등록 줄이 없다 | `.env.docker` 의 `BATCH_SCHEDULE_..._ENABLED` 가 `true` 인지. 설정 파일만 고쳤다면 `up -d --force-recreate app` 으로 컨테이너를 다시 만들어야 합니다 |
+| 스케줄이 돌 시각이 지났는데 수집이 없다 | `online_mention_snapshot` 에 `IMPORTING` 이 남아 있으면 건너뜁니다(8-4). 컨테이너 시간대도 확인: `exec app date` |
+| `run --rm app --job=...` 이 작업 없이 서버만 뜬다 | 이미지가 옛 버전입니다. 인자를 앱에 넘기는 `ENTRYPOINT` 수정이 들어간 이미지로 다시 빌드·푸시하세요 |
 
 ## 참고 문서
 
