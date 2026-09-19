@@ -5,6 +5,9 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.mamoki.tour.domain.visittiming.dto.AttractionForecast;
 import com.mamoki.tour.domain.visittiming.dto.DailyConcentration;
 
@@ -28,6 +31,8 @@ import com.mamoki.tour.domain.visittiming.dto.DailyConcentration;
  * @param to   지원 종료일. 공급자 창의 마지막 날이다.
  */
 public record ForecastWindow(LocalDate from, LocalDate to) {
+
+    private static final Logger log = LoggerFactory.getLogger(ForecastWindow.class);
 
     /**
      * 공급자가 한 번에 주는 예측 일수. 창을 확인하지 못했을 때 안내할 범위의 길이로만 쓴다.
@@ -90,6 +95,18 @@ public record ForecastWindow(LocalDate from, LocalDate to) {
 
         if (first == null) {
             return nominal(today);
+        }
+
+        // 공급자가 한 번에 주는 것은 연속한 30일이고 기준일이 조회일을 앞선 적은 없다.
+        // 그보다 뒤인 날짜가 한 줄이라도 섞여 들어오면 응답이 이상한 것이지 범위가 늘어난
+        // 것이 아니다. 그대로 따르면 그 한 줄 때문에 지원 범위가 몇 달로 벌어지고, 판정할
+        // 값이 없는 날이 수십 개 붙는다. 상한을 넘으면 잘라내고 무슨 일이 있었는지 남긴다.
+        LocalDate limit = today.plusDays(NOMINAL_DAYS - 1L);
+
+        if (last.isAfter(limit)) {
+            log.warn("공급자 예측에 지원 범위를 넘는 날짜가 섞여 있어 잘라냅니다: 응답 마지막={}, 상한={}",
+                    last, limit);
+            last = limit;
         }
 
         LocalDate start = first.isBefore(today) ? today : first;

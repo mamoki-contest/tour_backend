@@ -98,6 +98,40 @@ class ForecastWindowTest {
         assertThat(window).isEqualTo(ForecastWindow.nominal(TODAY));
     }
 
+    /**
+     * 공급자가 주는 것은 연속한 30일이고 기준일이 조회일을 앞선 적은 없다. 그보다 뒤인
+     * 날짜가 한 줄이라도 섞여 들어오면 응답이 이상한 것이지 지원 범위가 늘어난 것이 아니다.
+     * 그대로 따르면 그 한 줄 때문에 범위가 몇 달로 벌어지고, 상세의 하루치 판정에 값이 없는
+     * 날이 수십 개 붙는다.
+     */
+    @Test
+    @DisplayName("이상한 미래 날짜가 섞여도 지원 범위는 30일을 넘지 않는다")
+    void capsWindowAtNominalLength() {
+        List<DailyConcentration> days = new ArrayList<>(forecast(TODAY, 30).days());
+        days.add(new DailyConcentration(TODAY.plusYears(1), new BigDecimal("1")));
+
+        ForecastWindow window = ForecastWindow.of(
+                List.of(new AttractionForecast("장소", "장소", "51150", null, null, days)), TODAY);
+
+        assertThat(window.to()).isEqualTo(TODAY.plusDays(29));
+        assertThat(window.days()).isEqualTo(30);
+        assertThat(window.dates()).hasSize(30);
+        assertThat(window.contains(TODAY.plusYears(1))).isFalse();
+    }
+
+    @Test
+    @DisplayName("공급자 창이 하루 뒤처진 날에 이상한 날짜가 섞여도 30일을 넘지 않는다")
+    void capsWindowEvenWhenProviderWindowLags() {
+        List<DailyConcentration> days = new ArrayList<>(forecast(TODAY.minusDays(1), 30).days());
+        days.add(new DailyConcentration(TODAY.plusDays(90), new BigDecimal("1")));
+
+        ForecastWindow window = ForecastWindow.of(
+                List.of(new AttractionForecast("장소", "장소", "51150", null, null, days)), TODAY);
+
+        assertThat(window.from()).isEqualTo(TODAY);
+        assertThat(window.days()).isLessThanOrEqualTo(ForecastWindow.NOMINAL_DAYS);
+    }
+
     @Test
     @DisplayName("날짜가 없는 행은 창을 흔들지 않는다")
     void ignoresRowsWithoutDate() {

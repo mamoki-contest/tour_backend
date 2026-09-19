@@ -78,7 +78,10 @@ class AttractionRepositoryTest {
                 new BigDecimal("37.7000000"), new BigDecimal("37.9000000"),
                 new BigDecimal("128.8000000"), new BigDecimal("129.0000000"));
 
-        assertThat(found).extracting(Attraction::getName).containsExactly("강릉 안");
+        // 이 테스트가 넣은 두 곳만 본다. 테스트 스키마는 여러 테스트가 함께 쓰고, 카탈로그
+        // 적재 테스트처럼 커밋까지 하는 테스트도 있어 표 전체를 단정하면 남의 행에 걸린다.
+        assertThat(found).extracting(Attraction::getName).contains("강릉 안");
+        assertThat(found).extracting(Attraction::getName).doesNotContain("춘천 밖");
     }
 
     @Test

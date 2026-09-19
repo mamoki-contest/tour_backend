@@ -299,6 +299,23 @@ class VisitTimingServiceTest {
         assertThat(detail.daily().get(28).status()).isEqualTo(fromList.status());
     }
 
+    /**
+     * 지원 범위를 공급자 응답에서 이끌어 내므로, 이상한 날짜 한 줄이 그대로 범위를 늘릴 수
+     * 있다. 한 해 뒤 날짜가 한 줄 섞이면 하루치 판정이 300개 넘게 붙고 그 대부분이 값 없는
+     * 날이 된다. 공급자가 주는 것은 연속한 30일이므로 그것을 상한으로 삼는다.
+     */
+    @Test
+    @DisplayName("이상한 미래 날짜가 한 줄 섞여도 하루치 판정은 30일을 넘지 않는다")
+    void capsDailyForecastAtNominalLength() {
+        givenResponse(bodyWithStrayDate(TODAY, 30, TODAY.plusYears(1), GANGNEUNG, "경포대"));
+
+        VisitTimingDetail detail =
+                visitTimingService.resolveDetail(attraction("1", "경포대", GANGNEUNG), TODAY);
+
+        assertThat(detail.daily()).hasSize(30);
+        assertThat(detail.summary().supportedTo()).isEqualTo(TODAY.plusDays(29));
+    }
+
     @Test
     @DisplayName("예측을 받지 못하면 있을 수 있는 가장 넓은 범위를 안내한다")
     void reportsWidestWindowWhenProviderUnavailable() {
@@ -370,5 +387,20 @@ class VisitTimingServiceTest {
                 {"response":{"header":{"resultCode":"0000","resultMsg":"OK"},\
                 "body":{"items":{"item":[%s]},"numOfRows":1000,"pageNo":1,"totalCount":%d}}}"""
                 .formatted(items, totalCount);
+    }
+
+    /** 정상 창에 지원 범위를 한참 넘는 날짜 한 줄을 섞은 응답. */
+    private String bodyWithStrayDate(LocalDate baseDate, int dayCount, LocalDate strayDate,
+                                     String lawdCode, String name) {
+
+        String strayRow = """
+                {"baseYmd":"%s","areaCd":"%s","areaNm":"강원특별자치도",\
+                "signguCd":"%s","signguNm":"시군","tAtsNm":"%s","cnctrRate":"1"}"""
+                .formatted(
+                        strayDate.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd")),
+                        lawdCode.substring(0, 2), lawdCode, name);
+
+        return body(baseDate, dayCount, lawdCode, name)
+                .replace("\"item\":[", "\"item\":[" + strayRow + ",");
     }
 }
