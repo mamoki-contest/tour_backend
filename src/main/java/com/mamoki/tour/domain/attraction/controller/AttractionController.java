@@ -169,7 +169,11 @@ public class AttractionController {
                     같은 문구로 표시하지 마세요.
                     """)
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "조회 성공. resultType 과 dataStatus 를 함께 확인합니다.")
+            @ApiResponse(responseCode = "200", description = "조회 성공. resultType 과 dataStatus 를 함께 확인합니다."),
+            @ApiResponse(responseCode = "400", description = """
+                    요청을 해석하지 못함. 쿼리의 퍼센트 인코딩이 깨진 경우(`%C0%C0` 처럼 UTF-8 로
+                    풀 수 없는 바이트)가 여기이며 `resultCode` 는 `400-5` 입니다.
+                    검색어는 UTF-8 로 인코딩해 보내세요.""")
     })
     @GetMapping("/search")
     public RsData<AttractionSearchResponse> searchAttractions(

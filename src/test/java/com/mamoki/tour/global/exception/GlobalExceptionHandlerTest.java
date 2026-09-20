@@ -12,8 +12,10 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -23,6 +25,13 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
 
+/**
+ * 예외를 응답 봉투로 바꾸는 규칙.
+ *
+ * <p>여기는 매핑만 본다. 톰캣이 요청을 푸는 단계에서 터지는 갈래는 {@code standaloneSetup}
+ * 이 그 단계를 지나지 않아 여기서 재현되지 않는다. 그쪽은 진짜 서블릿 컨테이너를 지나는
+ * {@code BrokenQueryEncodingThroughTest} 가 본다(#96).
+ */
 class GlobalExceptionHandlerTest {
 
     private MockMvc mvc;
@@ -76,6 +85,36 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    @DisplayName("요청을 해석하지 못하면 400 으로 응답한다")
+    void malformedRequestBecomesBadRequest() throws Exception {
+        // 깨진 퍼센트 인코딩이 실제로 이 예외를 만든다. 잘못된 바이트를 보낸 쪽은 클라이언트다.
+        mvc.perform(get("/test/malformed"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.resultCode").value("400-5"))
+                .andExpect(jsonPath("$.msg").value("요청 형식이 올바르지 않습니다."))
+                // 톰캣 내부 사정은 내보내지 않는다.
+                .andExpect(jsonPath("$.msg").value(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("decoding"))));
+    }
+
+    @Test
+    @DisplayName("헤더처럼 파라미터가 아닌 값이 빠져도 400 으로 응답한다")
+    void missingRequestValueBecomesBadRequest() throws Exception {
+        mvc.perform(get("/test/header"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.resultCode").value("400-1"));
+    }
+
+    @Test
+    @DisplayName("경로 변수를 찾지 못한 것은 서버 잘못이라 500 으로 응답한다")
+    void missingPathVariableStaysServerError() throws Exception {
+        // 클라이언트가 고칠 수 있는 것이 없다. 매핑과 시그니처가 어긋난 것이다.
+        mvc.perform(get("/test/path/무엇"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.resultCode").value("500-1"));
+    }
+
+    @Test
     @DisplayName("미처리 예외는 내부 정보를 노출하지 않고 500 으로 응답한다")
     void unexpectedExceptionHidesInternals() throws Exception {
         mvc.perform(get("/test/boom"))
@@ -112,6 +151,23 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/boom")
         RsData<Void> boom() {
             throw new IllegalStateException("공급자 응답 원문이 그대로 들어 있는 내부 메시지");
+        }
+
+        @GetMapping("/test/malformed")
+        RsData<Void> malformed() {
+            throw new org.apache.tomcat.util.http.InvalidParameterException(
+                    "Character decoding failed", 400);
+        }
+
+        @GetMapping("/test/header")
+        RsData<String> header(@RequestHeader("X-Trace-Id") String traceId) {
+            return RsData.of("200-1", "조회했습니다.", traceId);
+        }
+
+        /** 경로 변수 이름이 매핑에 없다. 시그니처와 매핑이 어긋난 상태를 흉내 낸다. */
+        @GetMapping("/test/path/**")
+        RsData<String> path(@PathVariable String name) {
+            return RsData.of("200-1", "조회했습니다.", name);
         }
 
         @GetMapping("/test/param")
