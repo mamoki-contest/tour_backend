@@ -71,6 +71,11 @@ public class AttractionController {
                     온라인 언급량이 산정되지 않았거나 이름이 모호한 장소는 정렬 대상에서 빠져
                     목록 뒤쪽에 모입니다. `온라인 언급 적은 순` 의 상단으로 올리지 않습니다.
 
+                    빠진 이유는 `onlineMention.status` 로 구분합니다. `AMBIGUOUS` 는 이름이 모호해
+                    그 장소의 값으로 볼 수 없다고 판정한 것이고, `UNAVAILABLE` 은 검색어를 만들 수
+                    없어 수집 대상이 아닌 것이며, `COLLECTION_FAILED` 는 값을 얻지 못한 것입니다.
+                    셋을 같은 문구로 표시하지 마세요. 정상 수집이 아니면 `count` 는 항상 null 입니다.
+
                     ### 정렬을 적용하지 못하는 경우
                     산정된 장소가 **하나도 없으면** 줄 세울 기준이 없어 정렬하지 않습니다.
                     이때 `sortApplied` 가 `false` 로 내려가고 `items` 는 기본 순서
