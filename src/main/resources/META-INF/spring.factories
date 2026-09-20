@@ -1,9 +1,11 @@
 # 설정 값이 비어 있으면 "지정하지 않은 것"으로 되돌리고, 그렇게 비어 버린 필수 값을 잡는다.
-# 프로퍼티 바인딩보다 먼저 돌아야 해서 빈이 아니라 여기에 등록한다.
-# 둘 사이의 순서는 등록 순서가 아니라 getOrder() 로 정해진다.
+# --job 으로 띄운 배치 프로세스에서는 웹 서버를 열지 않는다.
+# 프로퍼티 바인딩과 실행 형태 결정보다 먼저 돌아야 해서 빈이 아니라 여기에 등록한다.
+# 셋 사이의 순서는 등록 순서가 아니라 getOrder() 로 정해진다.
 org.springframework.boot.EnvironmentPostProcessor=\
 com.mamoki.tour.global.config.BlankValueEnvironmentPostProcessor,\
-com.mamoki.tour.global.config.RequiredEnvironmentVariablesPostProcessor
+com.mamoki.tour.global.config.RequiredEnvironmentVariablesPostProcessor,\
+com.mamoki.tour.global.batch.BatchJobWebApplicationTypePostProcessor
 
 # 필수 환경변수가 비었을 때 스택 트레이스 대신 채울 것을 알려준다.
 org.springframework.boot.diagnostics.FailureAnalyzer=\

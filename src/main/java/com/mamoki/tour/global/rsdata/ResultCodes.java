@@ -23,6 +23,14 @@ public final class ResultCodes {
     /** 파라미터 형식 불일치. */
     public static final String TYPE_MISMATCH = "400-4";
 
+    /**
+     * 요청 자체를 해석하지 못함.
+     *
+     * <p>깨진 퍼센트 인코딩처럼 파라미터를 읽어 보기도 전에 걸리는 경우다. 어느 필드가
+     * 잘못됐는지는 말할 수 없다 — 요청을 푸는 단계에서 멈췄기 때문이다.
+     */
+    public static final String MALFORMED_REQUEST = "400-5";
+
     /** 요청한 경로 없음. */
     public static final String NOT_FOUND = "404-1";
 

@@ -229,6 +229,51 @@ class AttractionServiceTest {
     }
 
     @Test
+    @DisplayName("모호·대상 아님은 응답에 그 상태 그대로 실린다")
+    void ambiguousAndUnavailableReachTheResponse() {
+        // 수집 실패로 덮으면 프론트는 "호출이 실패했다" 고 읽는다. 실제로는 이름이 모호해
+        // 뺀 것이거나 애초에 수집 대상이 아닌 것이다(#94).
+        mentionStatuses.put(contentId(1), MentionStatus.AMBIGUOUS);
+        mentionStatuses.put(contentId(2), MentionStatus.UNAVAILABLE);
+        givenCatalog(catalogOf(3));
+
+        List<AttractionResponse> items =
+                attractionService.search(sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20)).items();
+
+        assertThat(items).filteredOn(item -> item.contentId().equals(contentId(1)))
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.onlineMention().status()).isEqualTo(MentionStatus.AMBIGUOUS);
+                    assertThat(item.onlineMention().count()).isNull();
+                });
+        assertThat(items).filteredOn(item -> item.contentId().equals(contentId(2)))
+                .singleElement()
+                .satisfies(item ->
+                        assertThat(item.onlineMention().status()).isEqualTo(MentionStatus.UNAVAILABLE));
+    }
+
+    @Test
+    @DisplayName("스냅샷에 없는 장소만 수집 실패로 남는다")
+    void onlyPlacesMissingFromTheSnapshotAreCollectionFailed() {
+        // 스냅샷에는 있는데 상태가 다른 것과, 스냅샷에 아예 없는 것은 다른 사실이다.
+        mentionStatuses.put(contentId(1), MentionStatus.AMBIGUOUS);
+        givenCatalog(catalogOf(2));
+        // 스냅샷에 담기지 않은 장소. 상태가 다른 것이 아니라 조회 결과에 아예 없다.
+        mentionCounts.remove(contentId(2));
+
+        List<AttractionResponse> items =
+                attractionService.search(sortRequest(AttractionSort.ONLINE_MENTION_DESC, 1, 20)).items();
+
+        assertThat(items).filteredOn(item -> item.contentId().equals(contentId(2)))
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.onlineMention().status())
+                            .isEqualTo(MentionStatus.COLLECTION_FAILED);
+                    assertThat(item.onlineMention().ruleVersion()).isEqualTo("name+sigungu");
+                });
+    }
+
+    @Test
     @DisplayName("미산정·모호한 장소는 두 방향 모두 뒤쪽에 남는다")
     void unsortableStayAtTheBackInBothDirections() {
         mentionStatuses.put(contentId(2), MentionStatus.AMBIGUOUS);

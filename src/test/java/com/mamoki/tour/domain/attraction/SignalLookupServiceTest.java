@@ -98,7 +98,7 @@ class SignalLookupServiceTest {
         OnlineMentionSnapshot snapshot = mentionSnapshot("name+sigungu");
         given(mentionSnapshotRepository.findByStatus(SnapshotStatus.ACTIVE))
                 .willReturn(Optional.of(snapshot));
-        given(mentionEntryRepository.findSortableByContentIds(snapshot, CONTENT_IDS))
+        given(mentionEntryRepository.findByContentIds(snapshot, CONTENT_IDS))
                 .willReturn(List.of(mentionEntry(snapshot, "126508", 140_006L)));
 
         Map<String, OnlineMentionView> views =
@@ -117,7 +117,7 @@ class SignalLookupServiceTest {
         OnlineMentionSnapshot snapshot = mentionSnapshot("name+sigungu");
         given(mentionSnapshotRepository.findByStatus(SnapshotStatus.ACTIVE))
                 .willReturn(Optional.of(snapshot));
-        given(mentionEntryRepository.findSortableByContentIds(snapshot, CONTENT_IDS))
+        given(mentionEntryRepository.findByContentIds(snapshot, CONTENT_IDS))
                 .willReturn(List.of(mentionEntry(snapshot, "126508", 140_006L)));
 
         Map<String, OnlineMentionView> views =
@@ -126,6 +126,46 @@ class SignalLookupServiceTest {
         // 수집됐는데 0 인 것이 아니라 정렬 대상이 아닌 것이다. 위쪽에서 상태로 채운다.
         assertThat(views).containsOnlyKeys("126508");
         assertThat(views.get("126509")).isNull();
+    }
+
+    @Test
+    @DisplayName("모호·대상 아님은 그 상태 그대로 돌려준다")
+    void keepsAmbiguousAndUnavailableStatus() {
+        // 왜 값이 없는지를 여기서 덮으면 위쪽 어디에서도 되살릴 수 없다(#94).
+        OnlineMentionSnapshot snapshot = mentionSnapshot("name+sigungu");
+        given(mentionSnapshotRepository.findByStatus(SnapshotStatus.ACTIVE))
+                .willReturn(Optional.of(snapshot));
+        given(mentionEntryRepository.findByContentIds(snapshot, CONTENT_IDS))
+                .willReturn(List.of(
+                        mentionEntry(snapshot, "126508", null, MentionStatus.AMBIGUOUS),
+                        mentionEntry(snapshot, "126509", null, MentionStatus.UNAVAILABLE)));
+
+        Map<String, OnlineMentionView> views =
+                signalLookupService.findOnlineMentions(CONTENT_IDS).orElseThrow();
+
+        assertThat(views.get("126508").status()).isEqualTo(MentionStatus.AMBIGUOUS);
+        assertThat(views.get("126509").status()).isEqualTo(MentionStatus.UNAVAILABLE);
+        // 규칙 버전은 상태와 무관하게 어느 규칙으로 판정했는지를 알려 준다.
+        assertThat(views.get("126508").ruleVersion()).isEqualTo("name+sigungu");
+    }
+
+    @Test
+    @DisplayName("정상 수집이 아닌 항목은 수치를 싣지 않고 정렬 대상도 아니다")
+    void nonCollectedCarriesNoNumber() {
+        // 모호 판정 중에는 수치가 남아 있는 갈래가 있다(TMAP 수록인데 0건). 그 0 을 그대로
+        // 내보내면 유명한 곳이 '언급 적은 순' 최상단으로 올라온다.
+        OnlineMentionSnapshot snapshot = mentionSnapshot("name+sigungu");
+        given(mentionSnapshotRepository.findByStatus(SnapshotStatus.ACTIVE))
+                .willReturn(Optional.of(snapshot));
+        given(mentionEntryRepository.findByContentIds(snapshot, CONTENT_IDS))
+                .willReturn(List.of(mentionEntry(snapshot, "126508", 0L, MentionStatus.AMBIGUOUS)));
+
+        OnlineMentionView view =
+                signalLookupService.findOnlineMentions(CONTENT_IDS).orElseThrow().get("126508");
+
+        assertThat(view.status()).isEqualTo(MentionStatus.AMBIGUOUS);
+        assertThat(view.count()).isNull();
+        assertThat(view.isSortable()).isFalse();
     }
 
     @Test
@@ -253,13 +293,18 @@ class SignalLookupServiceTest {
 
     private static OnlineMentionEntry mentionEntry(OnlineMentionSnapshot snapshot,
                                                    String contentId, Long total) {
+        return mentionEntry(snapshot, contentId, total, MentionStatus.COLLECTED);
+    }
+
+    private static OnlineMentionEntry mentionEntry(OnlineMentionSnapshot snapshot, String contentId,
+                                                   Long total, MentionStatus status) {
         return OnlineMentionEntry.builder()
                 .snapshot(snapshot)
                 .contentId(contentId)
                 .placeName("경포해변")
                 .searchQuery("경포해변 강릉")
                 .mentionTotal(total)
-                .status(MentionStatus.COLLECTED)
+                .status(status)
                 .collectedAt(COLLECTED_AT)
                 .build();
     }

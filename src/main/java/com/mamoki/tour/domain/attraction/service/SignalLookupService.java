@@ -60,6 +60,10 @@ public class SignalLookupService {
     /**
      * 활성 온라인 언급량 스냅샷에서 값을 찾는다.
      *
+     * <p>스냅샷에 담긴 장소는 상태와 무관하게 모두 담아 돌려준다. 모호·대상 아님·수집 실패도
+     * 그 자체가 답이라서, 결과에서 빼면 "스냅샷이 보지 않은 장소" 와 구분할 수 없다(#94).
+     * 결과에 없는 장소만이 이 스냅샷이 보지 않은 장소다.
+     *
      * @return 스냅샷이 아직 없으면 빈 값. 정렬을 적용할 수 없다는 뜻이다.
      */
     @Transactional(readOnly = true)
@@ -75,9 +79,10 @@ public class SignalLookupService {
         Map<String, OnlineMentionView> views = new HashMap<>();
 
         for (OnlineMentionEntry entry
-                : mentionEntryRepository.findSortableByContentIds(snapshot, contentIds)) {
+                : mentionEntryRepository.findByContentIds(snapshot, contentIds)) {
 
-            views.put(entry.getContentId(), new OnlineMentionView(
+            // 수집이 내린 판정을 그대로 옮긴다. 정렬 대상인지는 상태로 가린다(#94).
+            views.put(entry.getContentId(), OnlineMentionView.of(
                     entry.getStatus(),
                     entry.getMentionTotal(),
                     entry.getCollectedAt(),

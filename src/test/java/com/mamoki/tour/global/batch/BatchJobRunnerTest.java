@@ -1,6 +1,7 @@
 package com.mamoki.tour.global.batch;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
@@ -32,6 +33,18 @@ import com.mamoki.tour.domain.visitorstats.importer.VisitorStatsImportService;
  *
  * <p>가장 중요한 것은 인자 없이 기동했을 때 아무것도 실행되지 않는 것이다. 이 조건이 깨지면
  * 앱을 띄울 때마다 외부 API 를 소진하고 스냅샷이 갈린다.
+ *
+ * <p>두 번째는 <b>작업 결과가 종료 코드로 남는 것</b>이다(#95). 예전에는 "작업 실패가 곧
+ * 기동 실패는 아니다" 라는 규칙만 있어서, 실패해도 프로세스가 웹 서버로 남고 배포
+ * 스크립트는 성공과 실패를 가릴 수 없었다. 지금은 예외를 밖으로 던지지 않는다는 규칙은
+ * 그대로 두고(스택 트레이스가 로그를 덮지 않게), 결과를 종료 코드로 알린다.
+ *
+ * <table>
+ *   <caption>종료 코드</caption>
+ *   <tr><td>0</td><td>작업 성공</td></tr>
+ *   <tr><td>1</td><td>작업 실패</td></tr>
+ *   <tr><td>2</td><td>알 수 없는 작업 이름</td></tr>
+ * </table>
  */
 class BatchJobRunnerTest {
 
@@ -64,8 +77,11 @@ class BatchJobRunnerTest {
                 placeMappingJobService);
     }
 
-    private void run(String... args) {
+    /** @return 이 실행이 남긴 종료 코드 */
+    private int run(String... args) {
         runner.run(new DefaultApplicationArguments(args));
+
+        return runner.getExitCode();
     }
 
     private void verifyNothingRan() {
@@ -77,7 +93,7 @@ class BatchJobRunnerTest {
     @Test
     @DisplayName("인자가 없으면 아무 작업도 실행하지 않는다")
     void runsNothingWithoutJobOption() {
-        run();
+        assertThat(run()).isZero();
 
         verifyNothingRan();
     }
@@ -99,9 +115,10 @@ class BatchJobRunnerTest {
     }
 
     @Test
-    @DisplayName("알 수 없는 작업 이름이면 실행하지 않는다")
+    @DisplayName("알 수 없는 작업 이름이면 실행하지 않고 종료 코드 2 로 알린다")
     void rejectsUnknownJob() {
-        run("--job=드롭테이블");
+        // 오타는 실패와 다르다. 돌릴 작업 자체를 못 찾은 것이라 다시 돌려 봐야 같은 답이다.
+        assertThat(run("--job=드롭테이블")).isEqualTo(2);
 
         verifyNothingRan();
     }
@@ -109,7 +126,7 @@ class BatchJobRunnerTest {
     @Test
     @DisplayName("카탈로그 작업을 실행한다")
     void runsCatalogJob() {
-        run("--job=catalog");
+        assertThat(run("--job=catalog")).isZero();
 
         Mockito.verify(catalogImportService).importAll();
     }
@@ -158,24 +175,40 @@ class BatchJobRunnerTest {
     }
 
     @Test
-    @DisplayName("필요한 인자가 빠지면 실행하지 않는다")
+    @DisplayName("필요한 인자가 빠지면 실행하지 않고 종료 코드 1 로 알린다")
     void rejectsMissingRequiredOption() {
-        run("--job=tmap");
-        run("--job=visitor-stats");
-        run("--job=parking-catalog");
+        assertThat(run("--job=tmap")).isEqualTo(1);
+        assertThat(run("--job=visitor-stats")).isEqualTo(1);
+        assertThat(run("--job=parking-catalog")).isEqualTo(1);
 
         Mockito.verifyNoInteractions(tmapRankImportService, visitorStatsImportService,
                 parkingCatalogImportService);
     }
 
     @Test
-    @DisplayName("작업이 실패해도 기동을 막지 않는다")
-    void doesNotFailStartupWhenJobFails() {
+    @DisplayName("작업이 실패하면 예외를 던지지 않고 종료 코드 1 로 알린다")
+    void reportsFailureAsExitCode() {
+        // 예외를 그대로 띄우면 스택 트레이스가 기동 로그를 덮어 무엇이 실패했는지가 묻힌다.
+        // 실패한 사실은 로그와 종료 코드로 남긴다.
         willThrow(new IllegalStateException("공급자 장애")).given(catalogImportService).importAll();
 
-        run("--job=catalog");
+        assertThatCode(() -> assertThat(run("--job=catalog")).isEqualTo(1))
+                .doesNotThrowAnyException();
 
         Mockito.verify(catalogImportService).importAll();
+    }
+
+    @Test
+    @DisplayName("실패한 뒤 성공하면 종료 코드도 그 결과를 따른다")
+    void exitCodeFollowsTheLastResult() {
+        willThrow(new IllegalStateException("공급자 장애")).given(catalogImportService).importAll();
+        assertThat(run("--job=catalog")).isEqualTo(1);
+
+        Mockito.reset(catalogImportService);
+        given(catalogImportService.importAll())
+                .willReturn(new AttractionCatalogImportResult(10, 10, 0, 0));
+
+        assertThat(run("--job=catalog")).isZero();
     }
 
     @Test
@@ -209,7 +242,8 @@ class BatchJobRunnerTest {
     @Test
     @DisplayName("알 수 없는 원천이면 아무 원천도 돌지 않는다")
     void rejectsUnknownSource() {
-        run("--job=place-mapping", "--source=드롭테이블");
+        // 작업 이름은 맞고 인자가 틀렸다. 작업을 돌리다 실패한 것과 같은 자리다.
+        assertThat(run("--job=place-mapping", "--source=드롭테이블")).isEqualTo(1);
 
         Mockito.verifyNoInteractions(placeMappingJobService);
     }

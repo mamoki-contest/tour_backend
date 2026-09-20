@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.ExitCodeGenerator;
 import org.springframework.stereotype.Component;
 
 import com.mamoki.tour.domain.attraction.importer.AttractionCatalogImportResult;
@@ -46,17 +47,31 @@ import com.mamoki.tour.domain.visitorstats.importer.VisitorStatsImportService;
  * <p>관리 API 대신 커맨드라인을 쓴다. 이 서비스에는 인증 체계가 없다. PRD 가 회원가입과
  * 서버 계정을 범위 밖으로 두었기 때문이다. 관리 API 를 열면 누구나 호출해 외부 API 를
  * 소진시키거나 스냅샷을 갈아치울 수 있다.
+ *
+ * <p>작업 결과는 <b>종료 코드</b>로 남긴다(#95). 예외를 밖으로 던지지 않는 것은 그대로다 —
+ * 스택 트레이스가 기동 로그를 덮으면 무엇이 실패했는지가 오히려 묻힌다. 대신 스크립트가
+ * 로그를 읽지 않고도 결과를 알 수 있게 {@link ExitCodeGenerator} 로 알린다.
+ *
+ * <table>
+ *   <caption>종료 코드</caption>
+ *   <tr><td>0</td><td>작업 성공(또는 {@code --job} 없는 평범한 기동)</td></tr>
+ *   <tr><td>1</td><td>작업 실패</td></tr>
+ *   <tr><td>2</td><td>알 수 없는 작업 이름</td></tr>
+ * </table>
  */
 @Component
-public class BatchJobRunner implements ApplicationRunner {
+public class BatchJobRunner implements ApplicationRunner, ExitCodeGenerator {
 
-    /**
-     * 무엇을 돌릴지 고르는 인자 이름.
-     *
-     * <p>스케줄러도 이 이름으로 배치 실행 여부를 가린다. 두 곳이 다른 이름을 보면 배치
-     * 프로세스에서 스케줄러가 함께 뜬다.
-     */
-    public static final String JOB_OPTION = "job";
+    /** 작업 성공. */
+    private static final int SUCCESS = 0;
+
+    /** 작업 실패. 같은 명령을 다시 돌려 볼 만한 갈래다. */
+    private static final int JOB_FAILED = 1;
+
+    /** 알 수 없는 작업 이름. 다시 돌려도 같은 답이므로 실패와 구분한다. */
+    private static final int UNKNOWN_JOB = 2;
+
+    private static final String JOB_OPTION = BatchJobMode.JOB_OPTION;
 
     private static final String MONTH_OPTION = "month";
     private static final String DIR_OPTION = "dir";
@@ -75,6 +90,9 @@ public class BatchJobRunner implements ApplicationRunner {
     private final ParkingCatalogImportService parkingCatalogImportService;
     private final PlaceMappingJobService placeMappingJobService;
 
+    /** 마지막 실행이 남긴 결과. {@code --job} 없이 뜬 프로세스에서는 0 그대로다. */
+    private volatile int exitCode = SUCCESS;
+
     public BatchJobRunner(AttractionCatalogImportService catalogImportService,
                           OnlineMentionCollector mentionCollector,
                           TmapRankImportService tmapRankImportService,
@@ -91,6 +109,8 @@ public class BatchJobRunner implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
+        exitCode = SUCCESS;
+
         Optional<String> jobName = option(args, JOB_OPTION);
 
         if (jobName.isEmpty()) {
@@ -101,6 +121,7 @@ public class BatchJobRunner implements ApplicationRunner {
 
         if (job == null) {
             log.error("알 수 없는 작업입니다: {}. 사용할 수 있는 작업: {}", jobName.get(), BatchJob.names());
+            exitCode = UNKNOWN_JOB;
             return;
         }
 
@@ -109,9 +130,17 @@ public class BatchJobRunner implements ApplicationRunner {
         try {
             run(job, args);
         } catch (RuntimeException e) {
-            // 작업 실패가 곧 기동 실패는 아니다. 무엇이 실패했는지 남기고 종료 코드는 건드리지 않는다.
+            // 예외를 그대로 띄우면 스택 트레이스가 기동 로그를 덮어 무엇이 실패했는지가 묻힌다.
+            // 무엇이 실패했는지는 로그에, 실패했다는 사실은 종료 코드에 남긴다.
             log.error("작업이 실패했습니다: {}", job.jobName(), e);
+            exitCode = JOB_FAILED;
         }
+    }
+
+    /** 마지막 실행의 결과. {@code BatchJobExit} 이 이 값으로 프로세스를 내린다. */
+    @Override
+    public int getExitCode() {
+        return exitCode;
     }
 
     private void run(BatchJob job, ApplicationArguments args) {
