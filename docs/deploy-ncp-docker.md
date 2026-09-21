@@ -204,17 +204,67 @@ CORS_ALLOWED_ORIGINS=https://tour-contest.vercel.app
 docker compose -f docker-compose.prod.yml --env-file .env.docker up -d --force-recreate app
 ```
 
-> **CORS 를 열어도 이것만으로는 프론트가 API 를 부르지 못합니다.** 서버는
-> `http://211.233.201.61:8080` 이고 Vercel 은 `https://` 로 서빙됩니다. https 페이지에서
-> http 로 부르는 요청은 브라우저가 mixed content 로 막으며, CORS 설정으로는 풀리지
-> 않습니다. 둘 중 하나가 필요합니다.
->
-> 1. **Vercel 에서 프록시한다.** 프론트 레포의 `vercel.json` 에 `/api/:path*` 를
->    백엔드로 넘기는 rewrite 를 둡니다. 브라우저가 보기에 same-origin 이므로 mixed
->    content 도 CORS 도 발생하지 않고, 서버를 고칠 필요가 없습니다.
-> 2. **서버에 TLS 를 붙인다.** IP 에는 인증서를 받을 수 없으므로
->    `211.233.201.61.sslip.io` 같은 주소로 Caddy 를 8080 앞에 둡니다. NCP ACG 에서
->    443 을 열어야 합니다.
+> **CORS 만 고쳐서는 프론트가 API 를 부르지 못합니다.** https 페이지에서 http 로
+> 부르는 요청은 브라우저가 mixed content 로 막습니다. 아래 7절을 먼저 끝내야 합니다.
+
+---
+
+## 7. API 에 HTTPS 를 붙인다
+
+`docker-compose.prod.yml` 의 `caddy` 서비스가 인증서를 받아 `app:8080` 으로 넘깁니다.
+발급과 갱신은 Caddy 가 알아서 합니다. 사람이 할 일은 세 가지입니다.
+
+### 7-1. DNS 에 A 레코드를 둔다
+
+도메인 관리처(가비아: My가비아 → 서비스 관리 → 도메인 → DNS 관리 → 레코드 수정)에서
+서버 IP 를 가리키는 A 레코드를 둡니다.
+
+| 타입 | 호스트 | 값 |
+| --- | --- | --- |
+| A | `@` | `211.233.201.61` |
+
+도메인의 네임서버가 그 관리처 것이어야 설정이 먹습니다. 다른 곳으로 위임해 두었다면
+거기서 고쳐야 합니다.
+
+```bash
+nslookup yakjugo.store
+```
+
+### 7-2. ACG 에서 80 과 443 을 열는다
+
+NCP 콘솔 → Server → ACG → 서버에 걸린 ACG → ACG 설정 → Inbound 규칙 추가.
+
+| 프로토콜 | 접근 소스 | 허용 포트 |
+| --- | --- | --- |
+| TCP | 0.0.0.0/0 | 80 |
+| TCP | 0.0.0.0/0 | 443 |
+
+**80 도 반드시 엽니다.** Let's Encrypt 가 도메인 소유를 확인할 때(HTTP-01) 80 으로
+들어옵니다. 닫혀 있으면 발급이 계속 실패합니다.
+
+### 7-3. `.env.docker` 에 `API_DOMAIN` 을 넣고 올린다
+
+```bash
+API_DOMAIN=yakjugo.store
+```
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.docker up -d
+```
+
+발급됐는지 보려면 로그를 봅니다. `certificate obtained successfully` 가 나오면 된 겁니다.
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.docker logs caddy
+curl -I https://yakjugo.store/api/v1/attractions?sigunguCode=1&size=1
+```
+
+> 발급은 DNS 가 전파된 뒤에만 됩니다. 아직 전파 중이면 Caddy 가 스스로 다시
+> 시도하므로 기다리면 됩니다. 다만 **실패를 반복하면 Let's Encrypt 의 주당 한도에
+> 걸립니다.** DNS 와 ACG 를 먼저 끝내고 올리세요.
+
+8080 은 그대로 열려 있습니다. HTTPS 가 자리잡고 프론트가 도메인으로 넘어가면
+ACG 에서 8080 을 닫는 쪽이 깔끔합니다.
 
 ---
 

@@ -67,5 +67,33 @@ services:
       db:
         condition: service_healthy
 
+  # 인증서 발급과 갱신을 맡긴다. nginx + certbot 은 갱신 타이머를 따로 두고
+  # 실패를 사람이 봐야 하지만 Caddy 는 알아서 한다.
+  #
+  # 규칙이 하나뿐이라 Caddyfile 을 두지 않고 명령 한 줄로 끝낸다. 서버에
+  # 올릴 파일은 이 파일과 .env.docker 둘뿐이라는 전제를 깨지 않는다.
+  #
+  # ACG 에서 80 과 443 을 열어두어야 한다. 80 은 Let's Encrypt 의 HTTP-01
+  # 확인이 들어오는 길이라 닫히지 않았는지 확인해야 한다.
+  caddy:
+    image: caddy:2
+    container_name: tour-caddy
+    restart: unless-stopped
+
+    command: caddy reverse-proxy --from ${API_DOMAIN} --to app:8080
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    # 받은 인증서를 여기 두고 재시작해도 다시 받지 않는다. 이 볼륨을 빼면 컨테이너를
+    # 다시 만들 때마다 새로 받아 Let's Encrypt 의 주당 발급 한도에 걸린다.
+    volumes:
+      - tour-caddy-data:/data
+
+    depends_on:
+      - app
+
 volumes:
   tour-db-data:
+  tour-caddy-data:
