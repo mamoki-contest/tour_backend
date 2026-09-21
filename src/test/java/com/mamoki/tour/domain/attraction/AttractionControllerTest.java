@@ -77,7 +77,7 @@ class AttractionControllerTest {
     @DisplayName("관광지 목록을 RsData 봉투로 반환한다")
     void returnsListInRsData() throws Exception {
         given(attractionService.search(any())).willReturn(new AttractionListResponse(
-                List.of(new AttractionResponse("2868839", "가람집옹심이", null,
+                List.of(new AttractionResponse("2868839", "가람집옹심이", null, null, null,
                         "강원특별자치도 강릉시 공항길30번길 16",
                         new BigDecimal("37.7611934162"), new BigDecimal("128.9393320379"),
                         "39", "51150", "강릉시", null,
@@ -108,7 +108,7 @@ class AttractionControllerTest {
     @DisplayName("결측 값은 응답에서도 null 로 유지된다")
     void keepsMissingValuesNull() throws Exception {
         given(attractionService.search(any())).willReturn(new AttractionListResponse(
-                List.of(new AttractionResponse("1", "좌표 없는 장소", null, null, null, null,
+                List.of(new AttractionResponse("1", "좌표 없는 장소", null, null, null, null, null, null,
                         "12", null, null, null, null,
                         OnlineMentionView.notCollected(null),
                         TmapRankView.notAvailable(),
@@ -467,7 +467,7 @@ class AttractionControllerTest {
                                                        CurrentAccessView currentAccess) {
 
         return new AttractionDetailResponse(
-                "126508", "경포해변", null, "강원특별자치도 강릉시 창해로 514", "25460",
+                "126508", "경포해변", null, null, null, "강원특별자치도 강릉시 창해로 514", "25460",
                 "033-640-4901", "https://www.gn.go.kr", "경포해변은 강릉을 대표하는 해수욕장이다.",
                 new BigDecimal("37.8049458"), new BigDecimal("128.9017861"), "12",
                 "51150", "강릉시", LocalDateTime.of(2026, 5, 20, 9, 12, 52),
@@ -497,7 +497,7 @@ class AttractionControllerTest {
     /** 날짜 탐색 결과만 바꿔 가며 쓰는 한 건짜리 목록 응답. */
     private AttractionListResponse listOf(VisitTiming visitTiming) {
         return new AttractionListResponse(
-                List.of(new AttractionResponse("1", "경포대", null, null, null, null,
+                List.of(new AttractionResponse("1", "경포대", null, null, null, null, null, null,
                         "12", "51150", "강릉시", null, null,
                         OnlineMentionView.notCollected(null),
                         TmapRankView.notAvailable(),

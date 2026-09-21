@@ -22,6 +22,7 @@ import org.springframework.web.client.RestClient;
 import com.mamoki.tour.domain.attraction.dto.AttractionDetailResponse;
 import com.mamoki.tour.domain.attraction.service.AttractionDetailService;
 import com.mamoki.tour.domain.cache.dto.CachedResponse;
+import com.mamoki.tour.domain.placeimage.service.PlaceImageLookupService;
 import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
 import com.mamoki.tour.domain.region.entity.RegionCode;
 import com.mamoki.tour.domain.region.repository.RegionCodeRepository;
@@ -60,6 +61,7 @@ class AttractionDetailServiceTest {
     private VisitTimingService visitTimingService;
     private RelatedPlaceService relatedPlaceService;
     private CurrentAccessService currentAccessService;
+    private PlaceImageLookupService placeImageLookupService;
     private KorServiceClient client;
 
     @BeforeEach
@@ -86,9 +88,12 @@ class AttractionDetailServiceTest {
                 new CurrentAccessView(RoadFlowView.noData(), ParkingView.noData(),
                         java.time.LocalDateTime.now(), "국가교통정보센터"));
 
+        placeImageLookupService = Mockito.mock(PlaceImageLookupService.class);
+        given(placeImageLookupService.findUsable(anyString())).willReturn(Optional.empty());
+
         detailService = new AttractionDetailService(
                 client, cacheService, regionCodeRepository, visitTimingService, relatedPlaceService,
-                currentAccessService);
+                currentAccessService, placeImageLookupService);
     }
 
     private KorServiceClient realClient() {

@@ -42,6 +42,7 @@ import com.mamoki.tour.domain.attraction.service.CenterRankService;
 import com.mamoki.tour.domain.attraction.service.SignalLookupService;
 import com.mamoki.tour.domain.attraction.service.SignalLookupService.ActiveSignalVersions;
 import com.mamoki.tour.domain.cache.dto.CachedResponse;
+import com.mamoki.tour.domain.placeimage.service.PlaceImageLookupService;
 import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
 import com.mamoki.tour.domain.region.entity.RegionCode;
 import com.mamoki.tour.domain.region.repository.RegionCodeRepository;
@@ -103,6 +104,7 @@ class AttractionServiceTest {
     private CenterRankService centerRankService;
     private SignalLookupService signalLookupService;
     private VisitTimingService visitTimingService;
+    private PlaceImageLookupService placeImageLookupService;
 
     private final Map<String, Long> mentionCounts = new HashMap<>();
     private final Map<String, MentionStatus> mentionStatuses = new HashMap<>();
@@ -118,9 +120,14 @@ class AttractionServiceTest {
         signalLookupService = Mockito.mock(SignalLookupService.class);
         visitTimingService = Mockito.mock(VisitTimingService.class);
 
+        placeImageLookupService = Mockito.mock(PlaceImageLookupService.class);
+        given(placeImageLookupService.findUsable(any(java.util.Collection.class)))
+                .willReturn(Map.of());
+
         attractionService = new AttractionService(korServiceClient, cacheService,
                 regionCodeRepository, centerRankService, signalLookupService,
-                visitTimingService, attractionRepository, catalogImportRepository);
+                visitTimingService, attractionRepository, catalogImportRepository,
+                placeImageLookupService);
 
         given(regionCodeRepository.findAllByAreaCode("32"))
                 .willReturn(List.of(region(GANGNEUNG_LAWD, GANGNEUNG_SIGUNGU, "강릉시"),

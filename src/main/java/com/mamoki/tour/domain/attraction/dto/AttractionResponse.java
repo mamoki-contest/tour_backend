@@ -5,7 +5,10 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+import com.mamoki.tour.domain.attraction.support.ImageUrls;
+import com.mamoki.tour.domain.placeimage.dto.PlaceImageView;
 import com.mamoki.tour.domain.visittiming.dto.VisitTiming;
+import com.mamoki.tour.global.enums.ImageSource;
 
 /**
  * 관광지 목록 항목의 표준 계약.
@@ -14,6 +17,8 @@ import com.mamoki.tour.domain.visittiming.dto.VisitTiming;
  *
  * @param regionName 지역코드 매핑에서 찾은 시·군 이름. 매핑이 없으면 null.
  * @param centerRank 시·군 내부 중심관광지 순위. 매칭되지 않으면 null이며, 순위 없음이 낮은 순위를 뜻하지 않는다.
+ * @param imageSource 대표 이미지의 출처. 이미지가 없으면 null.
+ * @param imageSourceUrl 공급자 사진이 아닐 때 그 사진을 찾은 자리. 공급자 사진이면 null.
  * @param baseAt     이 항목의 공급자 기준 시점.
  * @param visitTiming 날짜 탐색 결과. 날짜 모드를 지정하지 않은 요청에서는 null.
  */
@@ -28,6 +33,19 @@ public record AttractionResponse(
 
         @Schema(description = "대표 이미지. 없으면 null")
         String imageUrl,
+
+        @Schema(description = """
+                대표 이미지의 출처. 이미지가 없으면 null 입니다.
+                KOR_SERVICE 는 한국관광공사가 준 사진이고, NAVER_IMAGE 는 공급자 사진이 없어
+                네이버 이미지 검색으로 채운 제3자 사진입니다. NAVER_IMAGE 는 화면에 출처를
+                함께 보여야 합니다.""")
+        ImageSource imageSource,
+
+        @Schema(description = """
+                그 사진을 찾은 자리(네이버 이미지 검색 결과). imageSource 가 NAVER_IMAGE 일 때만
+                채워집니다. 저작권자의 페이지가 아닙니다 - 이미지 검색 응답에 원문 글의 주소가
+                없어 만들 수 없습니다.""")
+        String imageSourceUrl,
 
         @Schema(description = "주소. 없으면 null", example = "강원특별자치도 속초시 미시령로 3054")
         String address,
@@ -97,6 +115,8 @@ public record AttractionResponse(
                 snapshot.contentId(),
                 snapshot.name(),
                 snapshot.imageUrl(),
+                ImageUrls.hasImage(snapshot.imageUrl()) ? ImageSource.KOR_SERVICE : null,
+                null,
                 snapshot.address(),
                 snapshot.latitude(),
                 snapshot.longitude(),
@@ -111,4 +131,24 @@ public record AttractionResponse(
                 visitTiming
         );
     }
+
+    /**
+     * 공급자 사진이 없는 자리에만 찾아 둔 사진을 건다(#99).
+     *
+     * <p>공급자 사진이 있으면 이 항목을 그대로 돌려준다. 우리가 찾은 제3자 사진으로 덮으면
+     * 허락받은 사진이 허락받지 않은 사진으로 조용히 바뀌고, 화면만 봐서는 알 수 없다.
+     *
+     * <p>목록이라 썸네일을 건다. 카드 수십 장에 원본을 걸면 목록이 느려진다.
+     */
+    public AttractionResponse withFallbackImage(PlaceImageView fallback) {
+        if (ImageUrls.hasImage(imageUrl) || fallback == null || fallback.cardImageUrl() == null) {
+            return this;
+        }
+
+        return new AttractionResponse(contentId, name, fallback.cardImageUrl(),
+                fallback.provider(), fallback.sourceUrl(), address, latitude, longitude,
+                contentTypeId, lawdCode, regionName, centerRank, baseAt, onlineMention,
+                tmapRank, visitorStats, visitTiming);
+    }
+
 }
