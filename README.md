@@ -94,6 +94,9 @@ cp .env.example .env
 | `NAVER_QUERY_SUFFIX` | 없음 (붙이지 않음) | 검색어 뒤에 말을 붙일 때 |
 | `NAVER_AMBIGUOUS_RATIO` | `0.10` | 이름 변별력 기준을 바꿀 때 |
 | `ITS_HALF_SPAN` | `0.005` (약 555m) | 교통정보를 볼 범위를 바꿀 때 |
+| `PLACE_IMAGE_MAX_CALLS` | `20000` | 대표 사진 보강 한 실행의 호출 상한을 바꿀 때 |
+| `PLACE_IMAGE_DISPLAY` | `3` | 이미지 검색에서 한 번에 받을 항목 수 |
+| `PLACE_IMAGE_FILTER` | `medium` | 이미지 크기 필터(`all`/`large`/`medium`/`small`) |
 
 비우면 그 기능이 꺼지는 값:
 
@@ -135,6 +138,7 @@ java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=tmap --dir=sample --downloade
 java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=visitor-stats --file="sample/주요관광지점 입장객(2004.07 이후)_260918083154.xls"
 java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=parking-catalog --file="sample/전국주차장정보표준데이터.csv" --downloaded-on=2026-09-19
 java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=place-mapping --source=tmap
+java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=place-image --sigungu=51150
 ```
 
 `--job` 을 주지 않으면 어떤 작업도 실행되지 않고 평소대로 서버만 뜹니다.
@@ -161,8 +165,9 @@ java -jar build/libs/tour-0.0.1-SNAPSHOT.jar --job=place-mapping --source=tmap
 | `visitor-stats` | 주요관광지점 입장객통계 엑셀 적재 | `--file` 필수, `--downloaded-on` |
 | `parking-catalog` | 전국주차장정보표준데이터 CSV 적재(강원 행만) | `--file` 필수, `--downloaded-on` |
 | `place-mapping` | 카카오 로컬 API 로 미매칭 이름을 카탈로그에 매핑 | `--source` (비우면 셋 모두) |
+| `place-image` | 사진 없는 관광지에 네이버 이미지 검색으로 대표 사진 보강 | `--refresh`, `--sigungu` (비우면 강원 전체·재수집 안 함) |
 
-**`catalog` 을 먼저 돌려야 합니다.** 언급량 수집은 카탈로그를 순회하고, TMAP·입장객은 카탈로그의 `contentId` 에 매칭되므로 카탈로그가 비어 있으면 수집이 멈추거나 매칭이 0건이 됩니다.
+**`catalog` 을 먼저 돌려야 합니다.** 언급량 수집은 카탈로그를 순회하고, TMAP·입장객은 카탈로그의 `contentId` 에 매칭되므로 카탈로그가 비어 있으면 수집이 멈추거나 매칭이 0건이 됩니다. 대표 사진 보강도 카탈로그에서 사진이 빈 관광지를 대상으로 삼습니다.
 
 목록 조회도 마찬가지입니다. 정렬(`sort`)과 지도 경계 조회는 카탈로그를 대상으로 하며,
 카탈로그가 비어 있으면 공급자 응답을 모아 정렬하는 폴백 경로로 내려가고 경고 로그를 남깁니다.
@@ -742,6 +747,97 @@ VALUES ('TMAP', '강원랜드카지노', '강원랜드카지노', '51770', '<카
 `normalized_name` 은 이름에서 글자와 숫자만 남기고 소문자로 바꾼 값입니다
 (`PlaceNameNormalizer`). 판정을 다시 받고 싶으면 그 행을 지우면 됩니다.
 
+## 대표 사진 보강 (`place_image`)
+
+공급자(KorService2)의 `firstimage` 가 빈 관광지가 있어 카드·상세에 사진 없는 자리가 남습니다.
+그 자리를 네이버 **이미지 검색**으로 찾은 사진으로 메웁니다(#99).
+
+> **저작권 — 읽고 쓰세요.**
+> 여기 담기는 것은 **제3자 저작물의 주소**입니다. 검색으로 찾았을 뿐 이용 허락을 받은
+> 사진이 아닙니다. **공모전 제출용(비상업)이라는 전제에서만** 쓰며, 서비스를 상업적으로
+> 운영하려면 이 기능을 끄고(표를 비우고) 직접 확보한 사진으로 바꿔야 합니다.
+> 화면에는 `imageSource` 를 보고 출처를 함께 표기하세요.
+
+### 무엇을 대상으로 하나
+
+카탈로그에서 `image_url` 이 **null 이거나 빈 문자열**인 관광지입니다. 공급자는 사진이 없을 때
+빈 문자열을 주므로 둘을 같게 봅니다. 공급자 사진이 있는 곳은 건드리지 않습니다.
+
+검색어는 **언급량 수집과 같은 규칙**(`SearchQueryRule`)으로 만듭니다 — `<표준 관광지명> <시·군명>`.
+규칙을 따로 두면 같은 장소를 두 배치가 다른 이름으로 찾게 됩니다.
+
+첫 유효 항목 하나만 씁니다(`sort=sim`, `display=3`, `filter=medium`). 여러 장을 받는 것은
+첫 항목이 주소 없는 껍데기일 때를 대비한 것이고, 받는 수를 늘려도 호출 수는 그대로입니다.
+
+### 표에 남는 것
+
+| 컬럼 | 뜻 |
+| --- | --- |
+| `content_id` | 카탈로그 식별자. 관광지당 한 행 |
+| `thumbnail_url` | 목록 카드가 쓸 썸네일. 응답의 `thumbnail` 이 비면 `link` 를 씁니다 |
+| `image_url` | 상세가 쓸 원본 |
+| `source_url` | 그 사진을 **찾은 자리**(같은 검색어의 이미지 검색 결과 주소) |
+| `provider` | `NAVER_IMAGE` |
+| `fetched_at` | 공급자에게 물어본 시각 |
+| `status` | `AVAILABLE` / `NONE` / `FAILED` |
+
+**`source_url` 은 저작권자의 페이지가 아닙니다.** 네이버 이미지 검색 응답에는 그 이미지가
+실린 글의 주소가 없어서(항목이 주는 것은 `link`·`thumbnail`·크기뿐) 저작권자에게 닿는 링크를
+만들 수 없습니다. 사람이 "이 사진이 어디서 왔나" 를 되짚을 수 있는 유일한 자리로 남깁니다.
+
+| `status` | 뜻 |
+| --- | --- |
+| `AVAILABLE` | 쓸 수 있는 사진을 찾았습니다. 조회가 이 행만 읽습니다 |
+| `NONE` | 물었지만 결과가 없었습니다. 0건이며 실패가 아닙니다 |
+| `FAILED` | 이 관광지 하나의 호출·해석이 실패했습니다 |
+
+**행이 없다는 것은 아직 묻지 않았다는 뜻입니다.** 묻고 못 찾은 것과 아직 묻지 않은 것을 같은
+모양으로 두면, 결과가 없는 관광지를 매달 다시 물으며 하루 한도를 깎습니다.
+
+### 다시 돌려도 안전합니다
+
+한 번 물어본 관광지는 상태와 무관하게 건너뜁니다. 검색어 규칙이나 필터를 바꿔 다른 답을
+기대할 때만 `--refresh` 로 다시 돕니다.
+
+```bash
+java -jar app.jar --job=place-image                      # 아직 묻지 않은 곳만
+java -jar app.jar --job=place-image --sigungu=51150      # 강릉시만
+java -jar app.jar --job=place-image --refresh            # 있는 행도 다시 수집
+```
+
+**하루 한도(25,000회)를 블로그 검색과 나눠 씁니다.** 같은 키를 쓰기 때문입니다. 한 실행의
+상한을 20,000회로 두어(`PLACE_IMAGE_MAX_CALLS`) 이 배치가 그달 언급량 수집의 몫까지 쓰지
+않게 막습니다. 상한에 닿으면 멈추고 남은 관광지는 다음 실행이 봅니다.
+
+인증 실패(401)와 한도 초과(429)는 **즉시 중단**합니다. 남은 관광지를 계속 불러도 모두 같은
+답을 받기 때문입니다. 그때까지 채운 사진은 관광지마다 따로 커밋되어 남습니다.
+
+### 조회에 실리는 방식
+
+목록·검색·컬렉션 재조회·상세 모두 **`imageUrl` 이 비어 있을 때만** 채웁니다. 공급자 사진이
+있으면 그대로 둡니다 — 허락받은 사진을 허락받지 않은 사진으로 덮지 않습니다.
+
+| 필드 | 값 |
+| --- | --- |
+| `imageUrl` | 목록은 썸네일, 상세는 원본. 공급자 사진이 있으면 그 값 그대로 |
+| `imageSource` | `KOR_SERVICE` / `NAVER_IMAGE`. 사진이 아예 없으면 `null` |
+| `imageSourceUrl` | `NAVER_IMAGE` 일 때만 채워집니다. 공급자 사진이면 `null` |
+
+기존 필드의 뜻은 바뀌지 않았습니다. `imageUrl` 은 전과 같이 "대표 이미지, 없으면 null" 이며,
+그것이 어디서 온 것인지를 `imageSource` 가 새로 말해 줄 뿐입니다.
+
+목록은 썸네일을, 상세는 원본을 겁니다. 카드 수십 장에 원본을 걸면 목록이 느려지고, 상세에
+썸네일을 걸면 확대했을 때 뭉갭니다.
+
+### 끄는 방법
+
+`--job=place-image` 를 돌리지 않으면 표가 비어 있고 응답은 전과 똑같습니다. 이미 쌓은 것을
+내리려면 표를 비웁니다.
+
+```sql
+TRUNCATE TABLE place_image;
+```
+
 ## 시드로 관리하는 표
 
 운영자 화면은 PRD 범위 밖이고 관리 API 도 두지 않았으므로(인증 체계가 없습니다),
@@ -860,7 +956,20 @@ VALUES ('TMAP', '강원랜드카지노', '강원랜드카지노', '51770', '<카
 | 서비스 | 용도 | 인증 |
 | --- | --- | --- |
 | 국가교통정보센터(ITS) | 관광지 주변 도로 소통 | `ITS_API_KEY` (openapi.its.go.kr 별도 발급) |
-| NAVER API HUB 검색 | 온라인 언급량 | `NAVER_API_HUB_KEY_ID` / `NAVER_API_HUB_KEY` |
+| NAVER API HUB 검색 | 온라인 언급량(블로그), 대표 사진 보강(이미지) | `NAVER_API_HUB_KEY_ID` / `NAVER_API_HUB_KEY` |
+
+**NAVER API HUB 는 Application 마다 쓸 API 를 따로 켭니다.** 키 하나로 허브의 모든 검색을
+부를 수 있는 것이 아닙니다. 켜지지 않은 API 를 부르면 HTTP 401 에
+`{"error":{"errorCode":401,"message":"요청한 API는 이 Application에서 활성화되어 있지 않습니다."}}`
+가 옵니다. 키가 틀렸을 때 오는 401 과 본문이 다릅니다(`errorCode 200`,
+`Authentication Failed`). 경로 자체가 없으면 404 이므로 셋은 구분됩니다.
+
+대표 사진 보강(`--job=place-image`)은 **이미지 검색**이 켜져 있어야 돕니다. 콘솔에서
+`전체 서비스 > Application Services > NAVER API HUB > Application` 으로 가서 쓰는
+Application 의 이용 API 에 `NAVER 검색 > 이미지` 를 더하세요. Application 을 새로 등록했다면
+`[인증 정보]` 에서 나온 Client ID·Client Secret 을 `.env` 의 `NAVER_API_HUB_KEY_ID`·
+`NAVER_API_HUB_KEY` 에 넣습니다. **설정 키는 늘어나지 않습니다** — 블로그 검색과 같은 키를
+씁니다.
 
 파일로 받아 적재하는 데이터도 있습니다. 자세한 조건은 `sample/README.md` 를 보세요.
 
