@@ -194,9 +194,27 @@ NONE         52
 프론트를 배포한 뒤에 주소가 정해지므로 마지막입니다. `.env.docker` 만 고치고 앱 컨테이너를
 다시 만듭니다(이미지를 다시 받을 필요는 없습니다).
 
+현재 배포한 프론트 주소는 `https://tour-contest.vercel.app` 입니다.
+
+```bash
+CORS_ALLOWED_ORIGINS=https://tour-contest.vercel.app
+```
+
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env.docker up -d --force-recreate app
 ```
+
+> **CORS 를 열어도 이것만으로는 프론트가 API 를 부르지 못합니다.** 서버는
+> `http://211.233.201.61:8080` 이고 Vercel 은 `https://` 로 서빙됩니다. https 페이지에서
+> http 로 부르는 요청은 브라우저가 mixed content 로 막으며, CORS 설정으로는 풀리지
+> 않습니다. 둘 중 하나가 필요합니다.
+>
+> 1. **Vercel 에서 프록시한다.** 프론트 레포의 `vercel.json` 에 `/api/:path*` 를
+>    백엔드로 넘기는 rewrite 를 둡니다. 브라우저가 보기에 same-origin 이므로 mixed
+>    content 도 CORS 도 발생하지 않고, 서버를 고칠 필요가 없습니다.
+> 2. **서버에 TLS 를 붙인다.** IP 에는 인증서를 받을 수 없으므로
+>    `211.233.201.61.sslip.io` 같은 주소로 Caddy 를 8080 앞에 둡니다. NCP ACG 에서
+>    443 을 열어야 합니다.
 
 ---
 
