@@ -27,6 +27,125 @@ NCP 서버 1대에 **컨테이너 2개**(MySQL, 애플리케이션)를 Docker Co
 
 ---
 
+## 재배포 체크리스트 (2026-09-21 기준)
+
+> **처음 배포하는 거라면 이 절을 건너뛰고 [0. 로컬 준비](#0-로컬-준비)부터 차례로 읽으세요.**
+> 이 절은 이미 서버가 떠 있는 상태에서 **다시 올릴 때** 밟을 순서만 모은 목차입니다.
+> 각 단계가 왜 그런지는 본문에 있고, 여기서는 링크로만 잇습니다.
+
+**왜 다시 올려야 하나.** 지금 `http://211.233.201.61:8080` 에 떠 있는 빌드는 **PR #97 이전**
+것입니다. 그 뒤에 들어간 대표 사진 보강(#100), 검색 상태 노출 같은 변경이 빠져 있어
+**이미지를 다시 만들어 다시 올려야** 합니다. 컨테이너만 재시작해서는 바뀌지 않습니다.
+
+### 배포 기준은 `develop` 입니다
+
+**`main` 에는 초기 커밋만 있습니다.** 팀의 작업은 전부 `develop` 에 쌓였고, 이 런북이 말하는
+"최신" 은 언제나 `develop` 입니다. 빌드도 `develop` 을 체크아웃한 상태에서 합니다.
+
+```bash
+git checkout develop && git pull origin develop
+git log --oneline -1          # 기준 커밋을 적어 두세요 (2026-09-21 시점: 167a40c)
+```
+
+> `main` 을 정리하고 싶다면 한 번 `develop` → `main` 을 머지해 두는 쪽을 권합니다.
+> 지금 그대로 두면 저장소를 처음 받는 사람이 빈 `main` 을 보고 코드가 없다고 판단합니다.
+> 다만 **이 런북은 `main` 이 비어 있는 채로도 성립합니다** — 배포 기준이 `develop` 이라는
+> 것만 지키면 됩니다.
+
+### 1. `.env.docker` 의 키가 다 채워져 있는지 본다
+
+| 키 | 없으면 생기는 일 | 발급처·전제 |
+| --- | --- | --- |
+| `DOCKERHUB_USERNAME`·`TAG` | `push`·`pull` 이 실패 | Docker Hub 계정 ([2절](#2-docker-hub-로그인과-푸시)) |
+| `DB_HOST`(=`db`)·`DB_PORT`·`DB_NAME`·`DB_USERNAME`·`DB_PASSWORD`·`MYSQL_ROOT_PASSWORD` | 앱이 DB 에 못 붙어 기동 실패 | 직접 정합니다. **`DB_HOST` 는 `db` 고정** |
+| `KOR_SERVICE_KEY` | 카탈로그·주차 등 공공데이터가 통째로 비어 옵니다 | 공공데이터포털 Encoding 키 **하나**를 6개 서비스가 공유합니다. 다만 **활용신청은 서비스마다 따로** 해야 하고, **강릉시 실시간 주차(`GNitsTrafficInfoService_1.0`) 도 같은 키지만 별도 활용신청이 필요합니다.** 빠뜨리면 오류 없이 주차 상태만 "정보 없음" 이 됩니다 |
+| `NAVER_API_HUB_KEY_ID`·`NAVER_API_HUB_KEY` | 언급량 수집과 대표 사진 보강이 401 | NAVER API HUB. **블로그 검색과 이미지 검색이 같은 키**지만, Application 의 이용 API 에 `NAVER 검색 > 이미지` 를 켜 두지 않으면 사진 보강만 401 로 막힙니다(8-2-5) |
+| `KAKAO_REST_API_KEY` | 장소 매핑이 호출을 한 번도 내지 않고 끝납니다 | developers.kakao.com REST API 키. 서버 전용이고 프론트로 내려보내지 않습니다 |
+| `ITS_API_KEY` | 상세의 도로 소통이 비어 옵니다 | openapi.its.go.kr 별도 발급 |
+| `CORS_ALLOWED_ORIGINS` | 브라우저가 이 API 를 **직접** 부를 때만 막힙니다 | 프론트 배포 주소를 넣습니다. 쉼표로 여럿. 아래 주의 참고 |
+
+> **`CORS_ALLOWED_ORIGINS` 는 지금 프론트에는 필요 없습니다.** 프론트(React Router SSR)는
+> 서버 로더에서만 이 API 를 부르고, 브라우저는 백엔드를 직접 부르지 않습니다(서버-서버 호출은
+> CORS 대상이 아닙니다). 그래도 **프론트 배포 주소를 넣어 두세요** — 브라우저에서 직접 부르는
+> 경로가 나중에 생기거나, 다른 출처의 Swagger UI 로 확인할 때 이 값이 없으면 그때 가서
+> 원인을 찾게 됩니다. 값이 비어 있으면 CORS 매핑 자체가 등록되지 않습니다.
+>
+> **키 값은 이 문서에 적지 않습니다.** `.env.docker` 는 커밋되지 않으며, 서버에 올린 뒤
+> `chmod 600` 으로 잠급니다([5-2](#5-서버에-올리고-실행)).
+
+### 2. 이미지를 다시 만들어 푸시한다 — [2-3](#2-docker-hub-로그인과-푸시)
+
+```bash
+# 내 PC, develop 체크아웃 상태에서
+docker compose --env-file .env.docker build app
+docker compose --env-file .env.docker push app
+```
+
+`TAG` 를 `latest` 로만 쓰면 서버에 어떤 빌드가 떠 있는지 나중에 구분할 수 없습니다.
+이번 재배포처럼 "무엇이 올라가 있는지 몰라서 다시 올리는" 일을 막으려면 `TAG` 를 올리세요.
+
+### 3. 서버에서 받아 띄운다 — [6절](#6-재배포)
+
+```bash
+# 서버
+docker compose -f docker-compose.prod.yml --env-file .env.docker pull
+docker compose -f docker-compose.prod.yml --env-file .env.docker up -d
+```
+
+### 4. 적재·수집을 순서대로 돌린다 — [8-1](#8-1-순서대로-손으로-한-번-돌린다)
+
+**순서가 있습니다. `place-image` 가 `place-mapping` 다음, `mention` 앞입니다.**
+
+```
+catalog → 파일 적재(parking-catalog · tmap · visitor-stats) → place-mapping → place-image → mention
+```
+
+| # | 명령 | 비고 |
+| --- | --- | --- |
+| 1 | `--job=catalog` | 나머지가 이것을 딛고 섭니다 |
+| 2 | `--job=parking-catalog --file=...` | 파일 필요. 8-2-2 |
+| 3 | `--job=tmap --dir=...` | zip **18개** 전부. 8-2-2 |
+| 4 | `--job=visitor-stats --file=...` | 파일 필요. 8-2-2 |
+| 5 | `--job=place-mapping` | 확정이 나오면 3·4 를 한 번 더. 8-2-4 |
+| 6 | `--job=place-image` | **약 5분.** 네이버 이미지 API 활성화 전제. 8-2-5 |
+| 7 | `--job=mention` | 카탈로그 수천 곳을 돌아 **오래 걸립니다** |
+
+### 5. 올라갔는지 눈으로 확인한다
+
+| 확인 | 기대값 (2026-09-21 로컬 실측) |
+| --- | --- |
+| `http://<공인IP>:8080/v3/api-docs` | `200` |
+| `http://<공인IP>:8080/api/v1/regions/visit-scale` | 강원 18개 시·군, `dataStatus: "AVAILABLE"` |
+| `http://<공인IP>:8080/api/v1/attractions?size=1` | `totalCount: 4741` |
+| `http://<공인IP>:8080/api/v1/attractions/125790` (강릉 경포대) | `currentAccess.parking.status: "AVAILABLE"`, `lots` 안에 `source: "강릉시 교통정보 조회서비스"` 인 실시간 주차장이 섞여 있음 |
+| `http://<공인IP>:8080/api/v1/attractions?size=50` | `imageSource` 가 `KOR_SERVICE` 와 `NAVER_IMAGE` 로 섞여 나옴. 전부 `KOR_SERVICE` 이고 `null` 이 보이면 6번(`place-image`)을 안 돌린 것입니다 |
+
+사진 보강이 실제로 몇 건 들어갔는지는 표를 직접 세는 쪽이 정확합니다.
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.docker exec db \
+  mysql -u tour -p tour -e "SELECT status, COUNT(*) FROM place_image GROUP BY status;"
+```
+
+```
+AVAILABLE  1131
+NONE         52
+```
+
+로컬 실측값입니다. `FAILED` 가 있거나 합이 1,183 에 크게 못 미치면 배치가 중간에 끊긴
+것이니 8-2-5 를 보세요.
+
+### 6. 프론트 배포 주소를 `CORS_ALLOWED_ORIGINS` 에 넣는다
+
+프론트를 배포한 뒤에 주소가 정해지므로 마지막입니다. `.env.docker` 만 고치고 앱 컨테이너를
+다시 만듭니다(이미지를 다시 받을 필요는 없습니다).
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.docker up -d --force-recreate app
+```
+
+---
+
 ## 파일 구성
 
 이번에 추가된 것들입니다.
@@ -448,7 +567,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.docker exec db mysql -
 **순서가 있습니다.**
 
 ```
-카탈로그  →  파일 적재(주차장·TMAP·입장객)  →  장소 매핑  →  언급량
+카탈로그  →  파일 적재(주차장·TMAP·입장객)  →  장소 매핑  →  대표 사진 보강  →  언급량
 ```
 
 장소 매핑은 TMAP·입장객 적재가 남긴 미매칭 이름을 보므로 그 뒤에 옵니다. 언급량과는
@@ -457,6 +576,11 @@ docker compose -f docker-compose.prod.yml --env-file .env.docker exec db mysql -
 카탈로그가 맨 앞인 이유는 나머지가 그것을 딛고 서기 때문입니다. 언급량 수집은 카탈로그를
 순회하고, TMAP·입장객은 카탈로그의 `contentId` 에 매칭됩니다. 카탈로그가 비어 있으면
 수집이 멈추거나 매칭이 0건이 됩니다.
+
+**대표 사진 보강도 카탈로그를 딛고 섭니다** — 카탈로그에서 사진이 빈 관광지를 대상으로
+삼기 때문입니다. 언급량보다 앞에 두는 이유는 **둘이 같은 네이버 키의 하루 한도(25,000회)를
+나눠 쓰기** 때문입니다. 사진 보강이 먼저 끝나 몇 회를 썼는지 보고 나서 언급량을 돌리는 쪽이,
+언급량을 한참 돌리다 한도에 걸려 사진이 비는 것보다 낫습니다.
 
 **주차장 적재만은 카탈로그와 무관합니다.** 주차장은 관광지 이름이 아니라 좌표로 잇기
 때문에 언제 돌려도 됩니다. 그래도 한 번에 돌릴 때는 같은 자리에 둡니다.
@@ -477,7 +601,14 @@ docker compose -f docker-compose.prod.yml --env-file .env.docker \
 ```
 
 ```bash
-# 4. 마지막이 언급량. 카탈로그 수천 곳을 도므로 오래 걸립니다.
+# 4. 그다음 대표 사진 보강. 공급자 사진이 빈 관광지를 네이버 이미지 검색으로 메웁니다.
+#    네이버 콘솔에서 이미지 API 를 켜 두어야 합니다. 8-2-5 를 보세요.
+docker compose -f docker-compose.prod.yml --env-file .env.docker \
+  run --rm app --job=place-image
+```
+
+```bash
+# 5. 마지막이 언급량. 카탈로그 수천 곳을 도므로 오래 걸립니다.
 docker compose -f docker-compose.prod.yml --env-file .env.docker \
   run --rm app --job=mention
 ```
@@ -667,6 +798,89 @@ docker compose -f docker-compose.prod.yml --env-file .env.docker \
 분모를 줄여서 오른 것인지 구별할 수 없습니다. 분류 규칙은 `README.md` 의
 **미매칭 재분류** 절에 있습니다.
 
+**8-2-5. 대표 사진을 보강한다**
+
+공급자(KorService2)가 사진을 주지 않은 관광지가 있어 목록 카드와 상세에 빈 자리가 남습니다.
+이 배치가 그 자리를 **네이버 이미지 검색**으로 찾은 사진으로 메웁니다(#99, #100).
+**돌리지 않으면 오류 없이 사진만 계속 비어 있습니다** — 그래서 잊기 쉬운 단계입니다.
+
+원본 파일이 필요 없어 `-v` 마운트도 없습니다.
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.docker \
+  run --rm app --job=place-image
+```
+
+> **전제: 네이버 콘솔에서 이미지 검색 API 가 켜져 있어야 합니다.**
+> `.env.docker` 의 `NAVER_API_HUB_KEY_ID`·`NAVER_API_HUB_KEY` 는 언급량 수집(블로그 검색)과
+> **같은 키**지만, NAVER API HUB 는 **Application 마다 쓸 API 를 따로 켭니다.** 언급량이 잘
+> 돌았다고 해서 이미지 검색도 열려 있는 것이 아닙니다.
+>
+> 콘솔에서 `전체 서비스 > Application Services > NAVER API HUB > Application` 으로 가서
+> 쓰는 Application 의 이용 API 에 **`NAVER 검색 > 이미지`** 를 더하세요.
+> 켜지 않고 돌리면 첫 호출에서 아래 401 을 받고 **즉시 중단**합니다(남은 관광지를 계속
+> 불러도 모두 같은 답이라서입니다).
+>
+> ```json
+> {"error":{"errorCode":401,"message":"요청한 API는 이 Application에서 활성화되어 있지 않습니다."}}
+> ```
+>
+> 키 자체가 틀렸을 때 오는 401 은 본문이 다릅니다(`errorCode 200`, `Authentication Failed`).
+> 둘을 구분해서 보세요 — 고칠 자리가 콘솔이냐 `.env.docker` 냐가 갈립니다.
+
+끝나면 이런 줄이 남습니다. **2026-09-21 로컬에서 실제로 돌린 결과입니다.**
+
+```
+작업을 시작합니다: place-image (사진 없는 관광지 대표 사진 보강)
+...
+대표 사진 보강 완료: 대상=1183, 건너뜀=0, 호출=1183, 보강=1131, 결과없음=52, 실패=0
+대표 사진 보강 결과: 대상=1183, 건너뜀=0, 호출=1183, 보강=1131, 결과없음=52, 실패=0
+```
+
+**1,183곳에 약 5분** 걸렸습니다(13:18:24 → 13:23:03). 언급량 수집과 달리 한나절 잡고 있을
+작업이 아닙니다.
+
+| 숫자 | 뜻 |
+| --- | --- |
+| `대상` | 카탈로그에서 `image_url` 이 비어 있는 관광지 수 |
+| `건너뜀` | 전에 이미 물어본 곳. 다시 돌려도 호출하지 않습니다 |
+| `보강` | 쓸 수 있는 사진을 찾은 수 (`status=AVAILABLE`) |
+| `결과없음` | 물었지만 결과가 0건 (`status=NONE`). **실패가 아닙니다** |
+| `실패` | 그 관광지 하나의 호출·해석이 실패 (`status=FAILED`). 0 이 아니면 로그를 보세요 |
+
+**다시 돌려도 안전합니다.** 한 번 물어본 관광지는 결과와 무관하게 건너뜁니다. 묻고 못 찾은
+것과 아직 묻지 않은 것을 같게 두면 매달 같은 곳을 다시 물으며 하루 한도를 깎기 때문입니다.
+검색어 규칙이나 필터를 바꿔 다른 답을 기대할 때만 `--refresh` 로 다시 돕니다.
+
+```bash
+# 강릉시(51150)만 — 처음 돌려 볼 때 범위를 좁혀 확인하기 좋습니다
+docker compose -f docker-compose.prod.yml --env-file .env.docker \
+  run --rm app --job=place-image --sigungu=51150
+
+# 이미 답을 받아 둔 곳까지 다시 수집 (한도를 크게 씁니다)
+docker compose -f docker-compose.prod.yml --env-file .env.docker \
+  run --rm app --job=place-image --refresh
+```
+
+**하루 한도(25,000회)를 언급량 수집과 나눠 씁니다.** 같은 키라서입니다. 한 실행의 상한이
+20,000회(`PLACE_IMAGE_MAX_CALLS`)라 이 배치가 그달 언급량의 몫까지 쓰지는 않지만,
+**사진 보강을 언급량보다 먼저** 돌리는 순서를 지키세요(8-1). 상한에 닿으면 멈추고 남은
+관광지는 다음 실행이 봅니다.
+
+들어갔는지는 표로 셉니다.
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.docker exec db \
+  mysql -u tour -p tour -e "SELECT status, COUNT(*) FROM place_image GROUP BY status;"
+```
+
+API 로 보려면 목록의 `imageSource` 가 `KOR_SERVICE` 와 `NAVER_IMAGE` 로 섞여 나오는지
+봅니다. 자세한 응답 규칙과 되돌리는 방법(`TRUNCATE TABLE place_image`)은 `README.md` 의
+**대표 사진 보강** 절에 있습니다.
+
+> **이 사진들은 저작권을 확인한 사진이 아닙니다.** 공모전 제출용(비상업)이라는 전제에서만
+> 씁니다. 상업적으로 운영하려면 이 배치를 돌리지 말고 직접 확보한 사진으로 바꿔야 합니다.
+
 ### 8-3. 월간 스케줄을 켠다
 
 `.env.docker` 에 넣습니다. **기본은 전부 꺼짐이고, 하나도 켜지 않으면 스케줄러 자체가 뜨지 않습니다.**
@@ -723,6 +937,13 @@ docker compose -f docker-compose.prod.yml --env-file .env.docker logs app | grep
   작업 하나를 돌리려고 띄운 프로세스라 스케줄이 낄 자리가 없고, 8080 을 물 이유도 없습니다.
   작업을 마치면 종료 코드와 함께 내려갑니다(8-1 의 표).
 
+- **사진이 안 채워지는 것은 오류로 드러나지 않습니다.** `--job=place-image` 를 돌리지 않으면
+  `place_image` 표가 비어 있고 응답은 전과 똑같이 내려갑니다 — 사진 자리만 빕니다. 배포 뒤에
+  화면에 사진이 없다면 먼저 **배치를 돌렸는지**, 그다음 **네이버 이미지 API 가 켜져 있는지**
+  를 이 순서로 봅니다(8-2-5). `place-image` 에는 스케줄이 없어 늘 손으로 돌립니다.
+  카탈로그를 다시 적재해 새 관광지가 들어왔다면 한 번 더 돌리세요 — 새로 들어온 곳은
+  "아직 묻지 않은" 상태라 다음 실행이 대상으로 잡습니다.
+
 ---
 
 ## 막혔을 때
@@ -751,6 +972,10 @@ docker compose -f docker-compose.prod.yml --env-file .env.docker logs app | grep
 | `--job=tmap` 이 `데이터랩 다운로드 파일명 형식이 아닙니다` | zip 이름을 바꿨거나 압축을 풀었습니다. 어느 시·군인지는 파일명에만 있습니다. 데이터랩에서 받은 이름 그대로 두세요 |
 | `--job=tmap` 이 지역이 모자라다며 멈춘다 | 강원 18개 시·군 zip 이 모두 있어야 하고 원천 조회기간도 같아야 합니다(8-2-2). `ls ~/data/tmap/*.zip \| wc -l` 이 18 인지 |
 | 적재는 성공했는데 주차 상태가 여전히 `NO_DATA` | `--job=parking-catalog` 를 돌렸는지, 로그의 `시·군` 이 18 인지 봅니다. 좌표(`위도`·`경도`)가 빈 행은 적재돼도 반경 조회에서 빠집니다 |
+| 강릉인데 실시간 주차가 안 나온다 | `KOR_SERVICE_KEY` 는 맞는데 **강릉시 실시간 주차(`GNitsTrafficInfoService_1.0`) 활용신청을 따로 안 한 경우**입니다. 같은 키라도 서비스마다 신청이 필요하고, 빠지면 오류 없이 상태만 정보 없음이 됩니다 |
+| **사진이 안 채워진다** | 둘 중 하나입니다. ① **배치 미실행** — `--job=place-image` 를 돌렸는지 보세요(8-2-5). `SELECT COUNT(*) FROM place_image;` 가 0 이면 한 번도 안 돈 것입니다. ② **네이버 이미지 API 미활성** — 로그에 401 과 `요청한 API는 이 Application에서 활성화되어 있지 않습니다` 가 있으면 콘솔에서 `NAVER 검색 > 이미지` 를 켜야 합니다. 키가 틀렸을 때의 401 은 본문이 `Authentication Failed` 라 구분됩니다 |
+| `--job=place-image` 가 곧바로 멈춘다 | 401(인증·미활성)과 429(한도 초과)는 **즉시 중단**합니다. 남은 곳을 계속 불러도 같은 답이라서입니다. 그때까지 채운 사진은 남아 있으니, 원인을 고친 뒤 같은 명령을 다시 돌리면 이어서 갑니다 |
+| 사진은 채웠는데 `결과없음` 이 많다 | 실패가 아닙니다. 검색으로 사진을 찾지 못한 관광지입니다(로컬 실측 1,183곳 중 52곳). `--refresh` 로 다시 돌려도 검색어 규칙이 그대로면 같은 답이 옵니다 |
 
 ## 참고 문서
 
