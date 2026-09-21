@@ -81,6 +81,18 @@ public class ExternalApiRestClientConfig {
         return builder(properties.connectTimeout(), properties.readTimeout());
     }
 
+    /**
+     * 이미지 검색은 블로그 검색과 같은 허브·같은 설정을 쓰지만 빌더는 따로 만든다.
+     *
+     * <p>하나를 나눠 쓰면 {@code MockRestServiceServer} 가 한쪽 클라이언트를 가로채는 순간
+     * 다른 쪽까지 함께 가짜가 된다. 두 클라이언트를 한 테스트에서 쓰는 자리(배치)가 있어
+     * 그때 무엇을 가로챘는지가 흐려진다.
+     */
+    @Bean
+    public RestClient.Builder naverImageSearchRestClientBuilder(NaverApiHubProperties properties) {
+        return builder(properties.connectTimeout(), properties.readTimeout());
+    }
+
     @Bean
     public RestClient.Builder kakaoLocalRestClientBuilder(KakaoLocalProperties properties) {
         return builder(properties.connectTimeout(), properties.readTimeout());

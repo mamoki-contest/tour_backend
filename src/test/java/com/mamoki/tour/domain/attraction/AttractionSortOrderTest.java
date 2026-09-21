@@ -30,14 +30,14 @@ class AttractionSortOrderTest {
                 : new OnlineMentionView(MentionStatus.COLLECTED, mentionCount,
                         LocalDateTime.of(2026, 9, 6, 0, 0), "name+sigungu");
 
-        return new AttractionResponse(name, name, null, null, null, null, "12", "51150",
-                "강릉시", null, LocalDateTime.now(), mention,
+        return new AttractionResponse(name, name, null, null, null, null, null, null,
+                "12", "51150", "강릉시", null, LocalDateTime.now(), mention,
                 TmapRankView.notAvailable(), VisitorStatsView.notImported(), null);
     }
 
     private AttractionResponse ambiguous(String name) {
-        return new AttractionResponse(name, name, null, null, null, null, "12", "51150",
-                "강릉시", null, LocalDateTime.now(),
+        return new AttractionResponse(name, name, null, null, null, null, null, null,
+                "12", "51150", "강릉시", null, LocalDateTime.now(),
                 new OnlineMentionView(MentionStatus.AMBIGUOUS, null, null, "name+sigungu"),
                 TmapRankView.notAvailable(), VisitorStatsView.notImported(), null);
     }

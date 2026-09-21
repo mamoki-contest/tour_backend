@@ -12,6 +12,10 @@ import com.mamoki.tour.global.exception.ExternalApiException;
 public class NaverRateLimitException extends ExternalApiException {
 
     public NaverRateLimitException(String msg) {
-        super(ApiProvider.NAVER_BLOG_SEARCH, msg);
+        this(ApiProvider.NAVER_BLOG_SEARCH, msg);
+    }
+
+    public NaverRateLimitException(ApiProvider provider, String msg) {
+        super(provider, msg);
     }
 }

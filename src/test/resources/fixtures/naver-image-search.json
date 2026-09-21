@@ -1,0 +1,29 @@
+{
+  "lastBuildDate": "Thu, 11 Jun 2026 18:43:28 +0900",
+  "total": 25055897,
+  "start": 1,
+  "display": 3,
+  "items": [
+    {
+      "title": "<b>경포해변</b> 일출",
+      "link": "https://blogfiles.pstatic.net/MjAyNjA2MTFfMjcx/gyeongpo-sunrise.jpg",
+      "thumbnail": "https://search.pstatic.net/common/?src=https%3A%2F%2Fblogfiles.pstatic.net%2FMjAyNjA2MTFfMjcx%2Fgyeongpo-sunrise.jpg&type=b150",
+      "sizeheight": "1023",
+      "sizewidth": "682"
+    },
+    {
+      "title": "<b>경포해변</b> 산책로",
+      "link": "https://postfiles.pstatic.net/MjAyNjA2MTFfMTQ4/gyeongpo-walk.jpg",
+      "thumbnail": "https://search.pstatic.net/common/?src=https%3A%2F%2Fpostfiles.pstatic.net%2FMjAyNjA2MTFfMTQ4%2Fgyeongpo-walk.jpg&type=b150",
+      "sizeheight": "682",
+      "sizewidth": "1023"
+    },
+    {
+      "title": "<b>경포해변</b> 야경",
+      "link": "https://cafefiles.pstatic.net/MjAyNjA2MTFfOTkg/gyeongpo-night.jpg",
+      "thumbnail": "https://search.pstatic.net/common/?src=https%3A%2F%2Fcafefiles.pstatic.net%2FMjAyNjA2MTFfOTkg%2Fgyeongpo-night.jpg&type=b150",
+      "sizeheight": "800",
+      "sizewidth": "1200"
+    }
+  ]
+}

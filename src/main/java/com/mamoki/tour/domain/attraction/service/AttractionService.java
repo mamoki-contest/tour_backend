@@ -30,9 +30,12 @@ import com.mamoki.tour.domain.attraction.repository.AttractionRepository;
 import com.mamoki.tour.domain.attraction.service.SignalLookupService.ActiveSignalVersions;
 import com.mamoki.tour.domain.attraction.support.AttractionSortOrder;
 import com.mamoki.tour.domain.attraction.support.AttractionSortOrder.Ordered;
+import com.mamoki.tour.domain.attraction.support.ImageUrls;
 import com.mamoki.tour.domain.attraction.support.MapBounds;
 import com.mamoki.tour.domain.cache.dto.CachedResponse;
 import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
+import com.mamoki.tour.domain.placeimage.dto.PlaceImageView;
+import com.mamoki.tour.domain.placeimage.service.PlaceImageLookupService;
 import com.mamoki.tour.domain.region.entity.RegionCode;
 import com.mamoki.tour.domain.region.repository.RegionCodeRepository;
 import com.mamoki.tour.domain.visittiming.dto.VisitTiming;
@@ -117,6 +120,7 @@ public class AttractionService {
     private final VisitTimingService visitTimingService;
     private final AttractionRepository attractionRepository;
     private final AttractionCatalogImportRepository catalogImportRepository;
+    private final PlaceImageLookupService placeImageLookupService;
     private final AttractionSortOrder sortOrder = new AttractionSortOrder();
 
     /**
@@ -135,7 +139,8 @@ public class AttractionService {
                              SignalLookupService signalLookupService,
                              VisitTimingService visitTimingService,
                              AttractionRepository attractionRepository,
-                             AttractionCatalogImportRepository catalogImportRepository) {
+                             AttractionCatalogImportRepository catalogImportRepository,
+                             PlaceImageLookupService placeImageLookupService) {
         this.korServiceClient = korServiceClient;
         this.cacheService = cacheService;
         this.regionCodeRepository = regionCodeRepository;
@@ -144,6 +149,7 @@ public class AttractionService {
         this.visitTimingService = visitTimingService;
         this.attractionRepository = attractionRepository;
         this.catalogImportRepository = catalogImportRepository;
+        this.placeImageLookupService = placeImageLookupService;
     }
 
     /**
@@ -413,7 +419,7 @@ public class AttractionService {
         Map<String, VisitTiming> visitTimings =
                 visitTimingService.resolve(snapshots, dateMode, visitDate);
 
-        return snapshots.stream()
+        List<AttractionResponse> items = snapshots.stream()
                 .map(snapshot -> AttractionResponse.of(
                         snapshot,
                         regionName(regionsByLawdCode, snapshot),
@@ -423,6 +429,38 @@ public class AttractionService {
                                 TmapRankView.notAvailable()),
                         visitorStatsView(signals.visitorStats(), snapshot.contentId()),
                         visitTimings.get(snapshot.contentId())))
+                .toList();
+
+        return fillMissingImages(items);
+    }
+
+    /**
+     * 공급자 사진이 없는 항목에만 찾아 둔 사진을 건다(#99).
+     *
+     * <p>여기 한 곳에서 채운다. 목록·검색·컬렉션 재조회가 모두 이 조립을 거치므로, 채우는
+     * 자리를 나누면 같은 장소가 화면마다 다른 사진을 갖는다.
+     *
+     * <p>채울 자리가 없으면 표를 읽지 않는다. 사진이 다 있는 목록에서까지 질의가 나가면
+     * 지도를 미는 동안 쓰이지도 않을 조회가 따라다닌다.
+     */
+    private List<AttractionResponse> fillMissingImages(List<AttractionResponse> items) {
+        List<String> missing = items.stream()
+                .filter(item -> !ImageUrls.hasImage(item.imageUrl()))
+                .map(AttractionResponse::contentId)
+                .toList();
+
+        if (missing.isEmpty()) {
+            return items;
+        }
+
+        Map<String, PlaceImageView> found = placeImageLookupService.findUsable(missing);
+
+        if (found.isEmpty()) {
+            return items;
+        }
+
+        return items.stream()
+                .map(item -> item.withFallbackImage(found.get(item.contentId())))
                 .toList();
     }
 

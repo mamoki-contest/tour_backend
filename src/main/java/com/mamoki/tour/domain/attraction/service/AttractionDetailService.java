@@ -9,9 +9,12 @@ import org.springframework.stereotype.Service;
 import com.mamoki.tour.domain.attraction.dto.AttractionDetailResponse;
 import com.mamoki.tour.domain.attraction.dto.AttractionDetailSnapshot;
 import com.mamoki.tour.domain.attraction.dto.AttractionSnapshot;
+import com.mamoki.tour.domain.attraction.support.ImageUrls;
 import com.mamoki.tour.domain.cache.dto.CachedResponse;
 import com.mamoki.tour.domain.cache.service.ExternalApiCacheService;
 import com.mamoki.tour.domain.currentaccess.service.CurrentAccessService;
+import com.mamoki.tour.domain.placeimage.dto.PlaceImageView;
+import com.mamoki.tour.domain.placeimage.service.PlaceImageLookupService;
 import com.mamoki.tour.domain.region.entity.RegionCode;
 import com.mamoki.tour.domain.region.repository.RegionCodeRepository;
 import com.mamoki.tour.domain.relatedplace.dto.RelatedPlaces;
@@ -19,6 +22,7 @@ import com.mamoki.tour.domain.relatedplace.service.RelatedPlaceService;
 import com.mamoki.tour.domain.visittiming.dto.VisitTimingDetail;
 import com.mamoki.tour.domain.visittiming.service.VisitTimingService;
 import com.mamoki.tour.global.enums.ApiProvider;
+import com.mamoki.tour.global.enums.ImageSource;
 import com.mamoki.tour.global.exception.ExternalApiException;
 import com.mamoki.tour.global.exception.ServiceException;
 import com.mamoki.tour.global.rsdata.ResultCodes;
@@ -47,19 +51,22 @@ public class AttractionDetailService {
     private final VisitTimingService visitTimingService;
     private final RelatedPlaceService relatedPlaceService;
     private final CurrentAccessService currentAccessService;
+    private final PlaceImageLookupService placeImageLookupService;
 
     public AttractionDetailService(KorServiceClient korServiceClient,
                                    ExternalApiCacheService cacheService,
                                    RegionCodeRepository regionCodeRepository,
                                    VisitTimingService visitTimingService,
                                    RelatedPlaceService relatedPlaceService,
-                                   CurrentAccessService currentAccessService) {
+                                   CurrentAccessService currentAccessService,
+                                   PlaceImageLookupService placeImageLookupService) {
         this.korServiceClient = korServiceClient;
         this.cacheService = cacheService;
         this.regionCodeRepository = regionCodeRepository;
         this.visitTimingService = visitTimingService;
         this.relatedPlaceService = relatedPlaceService;
         this.currentAccessService = currentAccessService;
+        this.placeImageLookupService = placeImageLookupService;
     }
 
     public AttractionDetailResponse getDetail(String contentId) {
@@ -83,10 +90,16 @@ public class AttractionDetailService {
         VisitTimingDetail timing = visitTimingService.resolveDetail(basic, today);
         RelatedPlaces related = relatedPlaceService.resolve(basic, today);
 
+        // 공급자 사진이 없는 자리에만 찾아 둔 사진을 건다(#99). 상세는 원본을 쓴다 -
+        // 썸네일을 걸면 확대했을 때 뭉갠다.
+        FallbackImage image = resolveImage(basic.contentId(), basic.imageUrl());
+
         return new AttractionDetailResponse(
                 basic.contentId(),
                 basic.name(),
-                basic.imageUrl(),
+                image.imageUrl(),
+                image.source(),
+                image.sourceUrl(),
                 basic.address(),
                 detail.zipcode(),
                 detail.tel(),
@@ -106,6 +119,28 @@ public class AttractionDetailService {
                 currentAccessService.resolve(basic.latitude(), basic.longitude()),
                 related.alternatives(),
                 related.companions());
+    }
+
+    /**
+     * 화면에 걸 사진 한 장과 그 출처.
+     *
+     * <p>공급자 사진이 있으면 그대로 둔다. 우리가 찾은 제3자 사진으로 덮으면 허락받은
+     * 사진이 허락받지 않은 사진으로 조용히 바뀐다.
+     */
+    private FallbackImage resolveImage(String contentId, String providerImageUrl) {
+        if (ImageUrls.hasImage(providerImageUrl)) {
+            return new FallbackImage(providerImageUrl, ImageSource.KOR_SERVICE, null);
+        }
+
+        return placeImageLookupService.findUsable(contentId)
+                .filter(found -> found.detailImageUrl() != null)
+                .map(found -> new FallbackImage(found.detailImageUrl(), found.provider(),
+                        found.sourceUrl()))
+                .orElseGet(() -> new FallbackImage(null, null, null));
+    }
+
+    /** 사진 한 장과 그 출처. 셋이 함께 움직여야 해서 묶어 둔다. */
+    private record FallbackImage(String imageUrl, ImageSource source, String sourceUrl) {
     }
 
     /**

@@ -9,6 +9,7 @@ import com.mamoki.tour.domain.relatedplace.dto.RelatedPlacesView;
 import com.mamoki.tour.domain.visittiming.dto.DailyVisitTiming;
 import com.mamoki.tour.domain.visittiming.dto.VisitTiming;
 import com.mamoki.tour.global.enums.DataStatus;
+import com.mamoki.tour.global.enums.ImageSource;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -18,6 +19,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
  * <p>기본정보, 방문 혼잡도 예측, 대체지 후보, 함께 가기 좋은 곳을 각각 독립 필드로 둔다.
  * 하나의 점수로 합치지 않고, 어느 하나의 결측을 다른 신호로 추정하지도 않는다.
  *
+ * @param imageSource 대표 이미지의 출처. 이미지가 없으면 null.
+ * @param imageSourceUrl 공급자 사진이 아닐 때 그 사진을 찾은 자리. 공급자 사진이면 null.
  * @param dataStatus  기본정보의 신선도. 연관 장소와 예측은 각자의 상태를 따로 갖는다.
  * @param collectedAt 기본정보를 수집한 시각. 서버 저장 시각이 아니라 공급자 응답 기준이다.
  */
@@ -34,6 +37,19 @@ public record AttractionDetailResponse(
 
         @Schema(description = "대표 이미지. 없으면 null")
         String imageUrl,
+
+        @Schema(description = """
+                대표 이미지의 출처. 이미지가 없으면 null 입니다.
+                KOR_SERVICE 는 한국관광공사가 준 사진이고, NAVER_IMAGE 는 공급자 사진이 없어
+                네이버 이미지 검색으로 채운 제3자 사진입니다. NAVER_IMAGE 는 화면에 출처를
+                함께 보여야 합니다.""")
+        ImageSource imageSource,
+
+        @Schema(description = """
+                그 사진을 찾은 자리(네이버 이미지 검색 결과). imageSource 가 NAVER_IMAGE 일 때만
+                채워집니다. 저작권자의 페이지가 아닙니다 - 이미지 검색 응답에 원문 글의 주소가
+                없어 만들 수 없습니다.""")
+        String imageSourceUrl,
 
         @Schema(description = "주소. 없으면 null")
         String address,

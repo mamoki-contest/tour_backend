@@ -21,6 +21,9 @@ import com.mamoki.tour.domain.mention.service.OnlineMentionCollectResult;
 import com.mamoki.tour.domain.mention.service.OnlineMentionCollector;
 import com.mamoki.tour.domain.parking.importer.ParkingCatalogImportResult;
 import com.mamoki.tour.domain.parking.importer.ParkingCatalogImportService;
+import com.mamoki.tour.domain.placeimage.importer.PlaceImageJobRequest;
+import com.mamoki.tour.domain.placeimage.importer.PlaceImageJobService;
+import com.mamoki.tour.domain.placeimage.importer.PlaceImageResult;
 import com.mamoki.tour.domain.placemapping.enums.MappingSource;
 import com.mamoki.tour.domain.placemapping.importer.PlaceMappingJobService;
 import com.mamoki.tour.domain.placemapping.importer.PlaceMappingResult;
@@ -39,6 +42,7 @@ import com.mamoki.tour.domain.visitorstats.importer.VisitorStatsImportService;
  * java -jar app.jar --job=visitor-stats --file=sample/입장객.xls --downloaded-on=2026-09-18
  * java -jar app.jar --job=parking-catalog --file=sample/전국주차장정보표준데이터.csv --downloaded-on=2026-09-19
  * java -jar app.jar --job=place-mapping --source=tmap
+ * java -jar app.jar --job=place-image --refresh --sigungu=51150
  * </pre>
  *
  * <p><b>{@code --job} 이 없으면 아무것도 하지 않는다.</b> 평소 서버 기동에 영향을 주지 않아야
@@ -78,6 +82,8 @@ public class BatchJobRunner implements ApplicationRunner, ExitCodeGenerator {
     private static final String FILE_OPTION = "file";
     private static final String DOWNLOADED_ON_OPTION = "downloaded-on";
     private static final String SOURCE_OPTION = "source";
+    private static final String REFRESH_OPTION = "refresh";
+    private static final String SIGUNGU_OPTION = "sigungu";
 
     private static final DateTimeFormatter MONTH = DateTimeFormatter.ofPattern("yyyyMM");
 
@@ -89,6 +95,7 @@ public class BatchJobRunner implements ApplicationRunner, ExitCodeGenerator {
     private final VisitorStatsImportService visitorStatsImportService;
     private final ParkingCatalogImportService parkingCatalogImportService;
     private final PlaceMappingJobService placeMappingJobService;
+    private final PlaceImageJobService placeImageJobService;
 
     /** 마지막 실행이 남긴 결과. {@code --job} 없이 뜬 프로세스에서는 0 그대로다. */
     private volatile int exitCode = SUCCESS;
@@ -98,13 +105,15 @@ public class BatchJobRunner implements ApplicationRunner, ExitCodeGenerator {
                           TmapRankImportService tmapRankImportService,
                           VisitorStatsImportService visitorStatsImportService,
                           ParkingCatalogImportService parkingCatalogImportService,
-                          PlaceMappingJobService placeMappingJobService) {
+                          PlaceMappingJobService placeMappingJobService,
+                          PlaceImageJobService placeImageJobService) {
         this.catalogImportService = catalogImportService;
         this.mentionCollector = mentionCollector;
         this.tmapRankImportService = tmapRankImportService;
         this.visitorStatsImportService = visitorStatsImportService;
         this.parkingCatalogImportService = parkingCatalogImportService;
         this.placeMappingJobService = placeMappingJobService;
+        this.placeImageJobService = placeImageJobService;
     }
 
     @Override
@@ -151,6 +160,7 @@ public class BatchJobRunner implements ApplicationRunner, ExitCodeGenerator {
             case VISITOR_STATS -> runVisitorStats(args);
             case PARKING_CATALOG -> runParkingCatalog(args);
             case PLACE_MAPPING -> runPlaceMapping(args);
+            case PLACE_IMAGE -> runPlaceImage(args);
         }
     }
 
@@ -182,6 +192,27 @@ public class BatchJobRunner implements ApplicationRunner, ExitCodeGenerator {
                         result.stoppedReason());
                 return;
             }
+        }
+    }
+
+    /**
+     * 사진 없는 관광지에 대표 사진을 찾아 둔다(#99).
+     *
+     * <p>{@code --refresh} 는 값 없이 준다. 이미 물어본 관광지까지 다시 도는 무거운 갈래라
+     * 기본은 꺼짐이다 — 검색어 규칙이나 필터를 바꿔 다른 답을 기대할 때만 켠다.
+     *
+     * <p>{@code --sigungu} 는 법정동 시·군 코드 5자리다. 한 시·군만 돌려 보고 결과를 확인한
+     * 뒤 전체로 넓히는 데 쓴다.
+     */
+    private void runPlaceImage(ApplicationArguments args) {
+        PlaceImageResult result = placeImageJobService.run(PlaceImageJobRequest.of(
+                flag(args, REFRESH_OPTION), option(args, SIGUNGU_OPTION).orElse(null)));
+
+        log.info("대표 사진 보강 결과: {}", result.summary());
+
+        if (result.stoppedEarly()) {
+            log.warn("대표 사진 보강을 끝까지 돌지 못했습니다: {}. 남은 관광지는 다음 실행이 봅니다.",
+                    result.stoppedReason());
         }
     }
 
@@ -255,6 +286,20 @@ public class BatchJobRunner implements ApplicationRunner, ExitCodeGenerator {
 
     private static String required(ApplicationArguments args, String name, String message) {
         return option(args, name).orElseThrow(() -> new IllegalArgumentException(message));
+    }
+
+    /**
+     * 값 없이 주는 깃발 인자.
+     *
+     * <p>{@code --refresh} 처럼 있는 것만으로 뜻이 되는 인자다. 값을 함께 주면
+     * ({@code --refresh=false}) 그 값을 따른다 — 스크립트가 변수로 켜고 끄는 자리가 있다.
+     */
+    private static boolean flag(ApplicationArguments args, String name) {
+        if (!args.containsOption(name)) {
+            return false;
+        }
+
+        return option(args, name).map(Boolean::parseBoolean).orElse(true);
     }
 
     /** 같은 옵션을 여러 번 주면 첫 값을 쓴다. 빈 값은 주지 않은 것으로 본다. */

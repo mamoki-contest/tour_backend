@@ -61,6 +61,31 @@ public interface AttractionRepository extends JpaRepository<Attraction, Long> {
     @Query("select a.name from Attraction a where a.name is not null")
     List<String> findAllNames();
 
+    /**
+     * 공급자 사진이 없는 관광지를 지역까지 함께 읽는다(#99).
+     *
+     * <p>빈 문자열도 사진 없음이다. 공급자는 사진이 없을 때 {@code firstimage} 를 빈
+     * 문자열로 주는데, 그것을 "값이 있다" 로 보면 사진 없는 자리가 그대로 남는다.
+     *
+     * <p>순서를 못 박는다. 호출 상한에 걸려 중간에 멈추는 배치라, 순서가 흔들리면 다음
+     * 실행이 어디부터 이어 가는지가 실행마다 달라진다.
+     */
+    @Query("""
+            select a from Attraction a left join fetch a.regionCode
+            where a.imageUrl is null or a.imageUrl = ''
+            order by a.contentId
+            """)
+    List<Attraction> findAllWithoutImage();
+
+    /** 한 시·군의 사진 없는 관광지. 지역 매핑이 없는 장소는 시·군 지정 조회의 대상이 아니다. */
+    @Query("""
+            select a from Attraction a join fetch a.regionCode r
+            where r.lawdCode = :lawdCode
+              and (a.imageUrl is null or a.imageUrl = '')
+            order by a.contentId
+            """)
+    List<Attraction> findAllWithoutImageByLawdCode(String lawdCode);
+
     /** 개인 컬렉션 재조회(#9)가 사용하는 배치 조회. */
     List<Attraction> findAllByContentIdIn(Collection<String> contentIds);
 
