@@ -21,6 +21,9 @@ import com.mamoki.tour.domain.attraction.importer.AttractionCatalogImportService
 import com.mamoki.tour.domain.mention.service.OnlineMentionCollectResult;
 import com.mamoki.tour.domain.mention.service.OnlineMentionCollector;
 import com.mamoki.tour.domain.parking.importer.ParkingCatalogImportService;
+import com.mamoki.tour.domain.placeimage.importer.PlaceImageJobRequest;
+import com.mamoki.tour.domain.placeimage.importer.PlaceImageJobService;
+import com.mamoki.tour.domain.placeimage.importer.PlaceImageResult;
 import com.mamoki.tour.domain.placemapping.enums.MappingSource;
 import com.mamoki.tour.domain.placemapping.importer.PlaceMappingJobService;
 import com.mamoki.tour.domain.placemapping.importer.PlaceMappingResult;
@@ -54,6 +57,7 @@ class BatchJobRunnerTest {
     private VisitorStatsImportService visitorStatsImportService;
     private ParkingCatalogImportService parkingCatalogImportService;
     private PlaceMappingJobService placeMappingJobService;
+    private PlaceImageJobService placeImageJobService;
     private BatchJobRunner runner;
 
     @BeforeEach
@@ -67,6 +71,9 @@ class BatchJobRunnerTest {
         given(placeMappingJobService.run(any()))
                 .willAnswer(call -> PlaceMappingResult.notRun(call.getArgument(0), null));
 
+        placeImageJobService = Mockito.mock(PlaceImageJobService.class);
+        given(placeImageJobService.run(any())).willReturn(PlaceImageResult.notRun(null));
+
         given(catalogImportService.importAll())
                 .willReturn(new AttractionCatalogImportResult(10, 10, 0, 0));
         given(mentionCollector.collect(any()))
@@ -74,7 +81,7 @@ class BatchJobRunnerTest {
 
         runner = new BatchJobRunner(catalogImportService, mentionCollector,
                 tmapRankImportService, visitorStatsImportService, parkingCatalogImportService,
-                placeMappingJobService);
+                placeMappingJobService, placeImageJobService);
     }
 
     /** @return 이 실행이 남긴 종료 코드 */
@@ -86,7 +93,8 @@ class BatchJobRunnerTest {
 
     private void verifyNothingRan() {
         Mockito.verifyNoInteractions(mentionCollector, tmapRankImportService,
-                visitorStatsImportService, parkingCatalogImportService, placeMappingJobService);
+                visitorStatsImportService, parkingCatalogImportService, placeMappingJobService,
+                placeImageJobService);
         Mockito.verify(catalogImportService, Mockito.never()).importAll();
     }
 
@@ -205,6 +213,9 @@ class BatchJobRunnerTest {
         assertThat(run("--job=catalog")).isEqualTo(1);
 
         Mockito.reset(catalogImportService);
+        placeImageJobService = Mockito.mock(PlaceImageJobService.class);
+        given(placeImageJobService.run(any())).willReturn(PlaceImageResult.notRun(null));
+
         given(catalogImportService.importAll())
                 .willReturn(new AttractionCatalogImportResult(10, 10, 0, 0));
 
@@ -264,11 +275,43 @@ class BatchJobRunnerTest {
     }
 
     @Test
-    @DisplayName("작업 목록에 여섯 가지가 모두 들어 있다")
+    @DisplayName("대표 사진 보강 작업은 인자를 주지 않으면 전체를 새로 수집만 한다")
+    void runsPlaceImageJob() {
+        assertThat(run("--job=place-image")).isZero();
+
+        Mockito.verify(placeImageJobService).run(PlaceImageJobRequest.of(false, null));
+    }
+
+    @Test
+    @DisplayName("--refresh 는 값 없이 주어도 재수집이다")
+    void runsPlaceImageJobWithRefreshFlag() {
+        run("--job=place-image", "--refresh");
+
+        Mockito.verify(placeImageJobService).run(PlaceImageJobRequest.of(true, null));
+    }
+
+    @Test
+    @DisplayName("--refresh=false 는 재수집하지 않는다는 뜻이다")
+    void honoursExplicitRefreshValue() {
+        run("--job=place-image", "--refresh=false");
+
+        Mockito.verify(placeImageJobService).run(PlaceImageJobRequest.of(false, null));
+    }
+
+    @Test
+    @DisplayName("--sigungu 를 주면 그 시·군만 본다")
+    void runsPlaceImageJobForOneDistrict() {
+        run("--job=place-image", "--sigungu=51150");
+
+        Mockito.verify(placeImageJobService).run(PlaceImageJobRequest.of(false, "51150"));
+    }
+
+    @Test
+    @DisplayName("작업 목록에 일곱 가지가 모두 들어 있다")
     void listsEveryJob() {
-        assertThat(BatchJob.values()).hasSize(6);
+        assertThat(BatchJob.values()).hasSize(7);
         assertThat(BatchJob.names())
                 .contains("catalog", "mention", "tmap", "visitor-stats", "parking-catalog",
-                        "place-mapping");
+                        "place-mapping", "place-image");
     }
 }

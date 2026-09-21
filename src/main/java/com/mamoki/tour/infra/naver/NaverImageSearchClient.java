@@ -51,6 +51,18 @@ public class NaverImageSearchClient {
     }
 
     /**
+     * 같은 검색어의 네이버 이미지 검색 결과 페이지.
+     *
+     * <p>이미지 검색 응답에는 <b>그 이미지가 실린 글의 주소가 없다</b>. 그래서 저작권자에게
+     * 닿는 링크를 만들 수 없고, 대신 사람이 "이 사진이 어디서 왔나" 를 되짚을 수 있는
+     * 자리를 남긴다. 출처 표기의 한계이지 출처 그 자체는 아니다.
+     */
+    public static String searchPageUrl(String query) {
+        return "https://search.naver.com/search.naver?where=image&query="
+                + URLEncoder.encode(query, StandardCharsets.UTF_8);
+    }
+
+    /**
      * @param display 받을 항목 수. 첫 항목이 주소 없는 껍데기일 수 있어 몇 장을 함께 받는다.
      * @param filter  이미지 크기 필터({@code all}/{@code large}/{@code medium}/{@code small}).
      * @throws NaverAuthenticationException 인증 실패 또는 이미지 검색 미활성. 남은 호출을

@@ -32,7 +32,14 @@ public enum BatchJob {
      *
      * <p>판정만 남기고 조회 응답을 바꾸지 않는다. TMAP·입장객은 다음 적재가 그 표를 읽는다.
      */
-    PLACE_MAPPING("place-mapping", "카카오 로컬 API 장소 매핑");
+    PLACE_MAPPING("place-mapping", "카카오 로컬 API 장소 매핑"),
+
+    /**
+     * 공급자 사진이 없는 관광지에 네이버 이미지 검색으로 대표 사진을 찾아 둔다(#99).
+     *
+     * <p>카탈로그가 먼저 채워져 있어야 한다. 대상이 카탈로그에서 사진이 빈 관광지이기 때문이다.
+     */
+    PLACE_IMAGE("place-image", "사진 없는 관광지 대표 사진 보강");
 
     private final String jobName;
     private final String description;
